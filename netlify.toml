@@ -1,0 +1,6 @@
+# Netlify configuration
+# - The published website is the contents of the "site" folder (index.html).
+# - Serverless functions live in "netlify/functions".
+[build]
+  publish = "site"
+  functions = "netlify/functions"
