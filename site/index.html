@@ -617,8 +617,20 @@
   @media(max-width:560px){header h1{font-size:34px}.app{padding:0 16px 100px}}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
+<!-- Login screen (real auth via Supabase). Covers the app until signed in. -->
+<div id="authGate" style="position:fixed;inset:0;z-index:99999;background:#faf9f6;display:flex;align-items:center;justify-content:center;font-family:'Inter',-apple-system,sans-serif;padding:24px;">
+  <div style="width:100%;max-width:320px;text-align:center;">
+    <div style="font-family:'Newsreader',Georgia,serif;font-size:34px;color:#1f1d1a;margin-bottom:8px;">Welcome, Vedya</div>
+    <div style="color:#8a8780;font-size:14px;margin-bottom:24px;">Enter your password</div>
+    <input id="authPass" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:12px;border:1px solid #e8e5dd;border-radius:10px;font-size:15px;background:#fff;color:#1f1d1a;text-align:center;">
+    <button id="authEnter" style="width:100%;padding:12px;border:none;border-radius:10px;background:#3a5a40;color:#fff;font-size:15px;font-weight:500;cursor:pointer;">Enter</button>
+    <div id="authMsg" style="margin-top:14px;font-size:13px;color:#8a8780;min-height:18px;text-align:center;"></div>
+  </div>
+</div>
+<button id="signOutBtn" onclick="window.__signOut&&window.__signOut()" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Sign out</button>
 <div id="bgLayer"></div>
 <div class="app" id="journalApp">
   <header>
@@ -2572,8 +2584,71 @@ $('fileInput').onchange=e=>{processFiles(e.target.files);e.target.value='';setTi
 $('homeLink').onclick=()=>go('home');
 document.onclick=e=>{if(menuOpen&&!e.target.closest('.acts')&&!e.target.closest('.menu')){menuOpen=null;if(current!=='home'&&current!=='timeline')renderSection();}};
 
-// boot
-(async()=>{render();await load();render();ensureThemes(()=>render());})();
+// ---- Login + cloud database (Supabase) ----
+const SB_URL='https://feixedobrnjvcnasaeyd.supabase.co';
+const SB_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlaXhlZG9icm5qdmNuYXNhZXlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAyNTI4NzcsImV4cCI6MjA5NTgyODg3N30.sf-pRaN2TCzee9QVrbIVn4_LYj5CUISWpMQ-dSE_kN8';
+const SB_EMAIL='vedya@vedyapeds.com'; // single hidden account; the password box is the only thing Vedya sees
+let _sb=null; try{ _sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(e){ console.error('Supabase failed to load',e); }
+
+let _uid=null;
+// Cloud-backed storage with the SAME get/set shape the app already uses,
+// so load()/saveEntries()/etc. keep working unchanged.
+function _cloudStorage(){
+  return {
+    get: async (k)=>{
+      const { data, error } = await _sb.from('store').select('value').eq('key',k).maybeSingle();
+      if(error){ console.error('storage.get',error); return null; }
+      return (data && data.value!=null) ? {value:data.value} : null;
+    },
+    set: async (k,v)=>{
+      const { error } = await _sb.from('store').upsert({ user_id:_uid, key:k, value:v, updated_at:new Date().toISOString() }, { onConflict:'user_id,key' });
+      if(error){ console.error('storage.set',error); throw error; }
+    }
+  };
+}
+
+let _booted=false;
+async function _startApp(){
+  if(_booted) return; _booted=true;
+  const { data:{ session } } = await _sb.auth.getSession();
+  _uid = session && session.user ? session.user.id : null;
+  window.storage=_cloudStorage();
+  document.getElementById('authGate').style.display='none';
+  document.getElementById('signOutBtn').style.display='block';
+  render(); await load(); render(); ensureThemes(()=>render());
+}
+window.__signOut=async()=>{ try{ await _sb.auth.signOut(); }catch(e){} location.reload(); };
+
+// boot — single password gate; only start the app once signed in
+(async()=>{
+  const M=document.getElementById('authMsg');
+  if(!_sb){ M.style.color='#c0392b'; M.textContent='Could not load the login system. Check your connection and refresh.'; return; }
+  const P=document.getElementById('authPass'), enterBtn=document.getElementById('authEnter');
+  let busy=false;
+  async function attempt(){
+    if(busy) return;
+    const pass=P.value;
+    if(!pass){ M.style.color='#c0392b'; M.textContent='Please enter your password.'; return; }
+    busy=true; M.style.color='#8a8780'; M.textContent='Checking…';
+    // First, try to log in to the existing account.
+    const { error } = await _sb.auth.signInWithPassword({ email:SB_EMAIL, password:pass });
+    if(!error){ _startApp(); return; }
+    // No existing login — treat as first-time setup: create the single account with this password.
+    const { data, error:se } = await _sb.auth.signUp({ email:SB_EMAIL, password:pass });
+    if(se){
+      busy=false;
+      if(/registered|already|exists/i.test(se.message)){ M.style.color='#c0392b'; M.textContent='Incorrect password.'; }
+      else { M.style.color='#c0392b'; M.textContent=se.message; }
+      return;
+    }
+    if(data.session){ _startApp(); return; }       // first-time setup complete, logged straight in
+    busy=false; M.style.color='#c0392b'; M.textContent='Almost there — turn off "Confirm email" in Supabase, then try again.';
+  }
+  enterBtn.onclick=attempt;
+  P.addEventListener('keydown',e=>{ if(e.key==='Enter') attempt(); });
+  const { data:{ session } } = await _sb.auth.getSession();
+  if(session){ _startApp(); }
+})();
 </script>
 </body>
 </html>
