@@ -660,6 +660,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#3a5a40">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -1437,7 +1438,7 @@ function wireAreaStrip(){
 function composerHTML(){
   const t=TYPES[current];
   if(!composerOpen){
-    return `<button class="newbtn" id="openComposer">＋ New ${t.label.toLowerCase().replace(/s$/,'')}</button>`;
+    return `<button class="newbtn" id="openComposer">＋ New ${t.label.toLowerCase().replace(/ies$/,'y').replace(/s$/,'')}</button>`;
   }
   const areaOpts=areas.map(a=>`<option value="${a.id}" ${draft.area===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
   const isK=current==='knowledge';
@@ -1710,7 +1711,7 @@ function renderPursuits(){
 function wellnessTrends(target){
   const sleepColor=(WELLNESS_TRACKS.find(t=>t.id==='sleep')||{}).color||'#378ADD';
   const days=[];
-  for(let i=29;i>=0;i--){const d=new Date(target);d.setDate(d.getDate()-i);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;days.push(wellnessLog[k]||{});}
+  for(let i=0;i<30;i++){const d=new Date(target);d.setDate(d.getDate()-i);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;days.push(wellnessLog[k]||{});}
   const sleeps=days.map(x=>+x.sleep||0);
   const maxS=Math.max(10,...sleeps);
   const W=300,H=66,bw=W/30;
@@ -1767,7 +1768,7 @@ function renderWellness(){
   // weekly dots for each track
   const weekStrip=`<div class="wel-week"><div class="wel-week-h">Last 7 days</div>${WELLNESS_TRACKS.map(t=>{
     let dots='';
-    for(let i=6;i>=0;i--){const d=new Date(target);d.setDate(d.getDate()-i);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    for(let i=0;i<=6;i++){const d=new Date(target);d.setDate(d.getDate()-i);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       const dd=wellnessLog[k]||{};const v=dd[t.id];const on=v===true||(typeof v==='number'&&v>0)||(typeof v==='string'&&v);
       dots+=`<span class="wel-dot ${on?'on':''}" title="${k}"></span>`;}
     return `<div class="wel-week-row"><span class="wel-week-lbl"><span class="wel-dot-icon" style="background:${t.color}"></span> ${t.name}</span><span class="wel-week-dots">${dots}</span></div>`;
