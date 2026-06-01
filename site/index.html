@@ -2570,21 +2570,21 @@ async function add(){
     if(e){e.type=current;e.area=areaVal;e.title=title||null;e.text=text;e.source=source;e.meta=meta;
       e.tags=[...new Set(manualTags)];e.when=(($('when')||{}).value||null);e.imgs=pendingImgs.slice();e.links=pendingLinks.slice();
       if(current==='goals'){e.habit=isHabit;if(isHabit&&!e.habitLog)e.habitLog=[];}
-      e.theme=null;}
+      e.theme=null;e._mod=Date.now();}
     closeComposer();renderSection();await saveEntries();ensureThemes(()=>render());return;
   }
   const ne={id:uid(),type:current,area:areaVal,title:title||null,text,source,meta,
     tags:[...new Set(manualTags)],when:(($('when')||{}).value||todayISO()),imgs:pendingImgs.slice(),
-    gps:pendingGps||null,links:pendingLinks.slice(),done:false,created:new Date().toISOString()};
+    gps:pendingGps||null,links:pendingLinks.slice(),done:false,created:new Date().toISOString(),_mod:Date.now()};
   if(current==='goals'){if(draft.parent)ne.parent=draft.parent;if(isHabit){ne.habit=true;ne.habitLog=[];}}
   entries.push(ne);
   closeComposer();
   renderSection();await saveEntries();ensureThemes(()=>render());
 }
-async function toggle(id){const e=entries.find(x=>x.id===id);if(e){e.done=!e.done;render();await saveEntries();}}
+async function toggle(id){const e=entries.find(x=>x.id===id);if(e){e.done=!e.done;e._mod=Date.now();render();await saveEntries();}}
 async function remove(id){await softDelete([id]);render();showToast('Moved to Trash','Undo',async()=>{await restoreFromTrash([id]);render();});}
-async function changeType(id,to){const e=entries.find(x=>x.id===id);if(e){e.type=to;if(!TYPES[to].check)e.done=false;menuOpen=null;render();await saveEntries();}}
-async function changeArea(id,aid){const e=entries.find(x=>x.id===id);if(e){e.area=aid;menuOpen=null;render();await saveEntries();}}
+async function changeType(id,to){const e=entries.find(x=>x.id===id);if(e){e.type=to;if(!TYPES[to].check)e.done=false;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
+async function changeArea(id,aid){const e=entries.find(x=>x.id===id);if(e){e.area=aid;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
 function gotoEntry(id){const e=entries.find(x=>x.id===id);if(!e)return;
   if(e.type==='knowledge'){pursuitsActive=false;current='knowledge';wsActiveId=id;wsView='notes';wsHistoryOpen=false;wsCardsOpen=false;wsSourceFilter=null;render();return;}
   if(e.type==='tasks'||e.type==='goals'){pursuitsActive=true;pursuitsSub=e.type;}else{pursuitsActive=false;}
@@ -2819,12 +2819,40 @@ function _cloudStorage(){
     }
   };
 }
+// Sync offline edits by MERGING with the cloud (item-level, newest-wins) rather
+// than overwriting — so changes made on another device aren't clobbered.
 async function _syncDirty(){
   if(!navigator.onLine||!_sb||!_uid)return false;
-  const d=_getDirty();if(!d.size)return false;
-  let synced=false;
-  for(const k of [...d]){const v=localStorage.getItem(_CK(k));if(v==null){_clearDirty(k);continue;}try{await _sbSet(k,v);_clearDirty(k);synced=true;}catch(e){}}
-  return synced;
+  const dirty=_getDirty();if(!dirty.size)return false;
+  const parse=s=>{try{return s?JSON.parse(s):null;}catch(e){return null;}};
+  const localOf=k=>parse(localStorage.getItem(_CK(k)));
+  const arrKeys=['repo:entries','repo:areas','repo:study','repo:trash'];
+  const allKeys=[...arrKeys,'repo:wellness','repo:prefs'];
+  const cloud={};
+  for(const k of allKeys){try{cloud[k]=parse(await _sbGet(k));}catch(e){cloud[k]=null;}}
+  // union by id; on id conflict keep the item with the newer _mod (fallback: local)
+  const mergeArr=(a,b)=>{const m={};(b||[]).forEach(x=>{if(x&&x.id!=null)m[x.id]=x;});(a||[]).forEach(x=>{if(x&&x.id!=null){const e=m[x.id];if(!e||((x._mod||0)>=(e._mod||0)))m[x.id]=x;}});return Object.values(m);};
+  const final={};
+  arrKeys.forEach(k=>{final[k]=dirty.has(k)?mergeArr(localOf(k),cloud[k]):(cloud[k]||localOf(k)||[]);});
+  final['repo:wellness']=dirty.has('repo:wellness')?Object.assign({},cloud['repo:wellness']||{},localOf('repo:wellness')||{}):(cloud['repo:wellness']||localOf('repo:wellness')||{});
+  final['repo:prefs']=dirty.has('repo:prefs')?(localOf('repo:prefs')||cloud['repo:prefs']):(cloud['repo:prefs']||localOf('repo:prefs'));
+  // a deletion on either device wins (trashed ids removed from the active list; still recoverable in Trash)
+  const trashIds=new Set((final['repo:trash']||[]).map(x=>x&&x.id).filter(Boolean));
+  final['repo:entries']=(final['repo:entries']||[]).filter(x=>x&&!trashIds.has(x.id));
+  for(const k of allKeys){
+    if(final[k]==null)continue;
+    const v=JSON.stringify(final[k]);
+    try{localStorage.setItem(_CK(k),v);}catch(e){}
+    if(dirty.has(k)){try{await _sbSet(k,v);_clearDirty(k);}catch(e){}}
+  }
+  entries=final['repo:entries']||entries;
+  if(final['repo:areas']&&final['repo:areas'].length)areas=final['repo:areas'];
+  studySources=final['repo:study']||studySources;
+  trash=final['repo:trash']||trash;
+  if(final['repo:wellness'])wellnessLog=final['repo:wellness'];
+  const pr=final['repo:prefs'];if(pr){homeMode=pr.homeMode||homeMode;wsFontScale=pr.wsFontScale||wsFontScale;theme=pr.theme||theme;}
+  if(typeof render==='function'&&!(typeof composerOpen!=='undefined'&&composerOpen))render();
+  return true;
 }
 function updateOfflineUI(){
   const el=document.getElementById('offlineBar');if(!el)return;
