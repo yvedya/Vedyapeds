@@ -973,6 +973,37 @@ function openTemplates(){
   $('tplClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openTemplates=openTemplates;
+// ---- AI link suggestions (in the Knowledge editor) ----
+async function aiSuggestLinks(){
+  const e=entries.find(x=>x.id===wsActiveId); if(!e)return;
+  const cands=entries.filter(x=>x.type==='knowledge'&&x.id!==e.id);
+  if(!cands.length){showToast('No other notes yet to link.');return;}
+  openLinkSuggest(null,'Finding related notes…');
+  const list=cands.map((c,i)=>`${i+1}. ${((c.title||c.text||'')+'').replace(/\s+/g,' ').slice(0,80)}${c.subject?(' ['+c.subject+']'):''}`).join('\n');
+  try{
+    const ans=await askAnthropic(`A medical knowledge note:\nTITLE: ${e.title||''}\nBODY: ${(e.text||'').slice(0,1500)}\n\nCandidate notes:\n${list}\n\nReturn ONLY a JSON array of the numbers (max 6) of the candidates most conceptually related to this note, e.g. [2,5]. If none are related, return [].`,150);
+    const nums=JSON.parse((ans.match(/\[[\d,\s]*\]/)||['[]'])[0]);
+    const sugg=nums.map(n=>cands[n-1]).filter(Boolean).filter(c=>!(e.links||[]).includes(c.id));
+    openLinkSuggest(sugg);
+  }catch(err){ openLinkSuggest([],'Could not get suggestions — check your connection.'); }
+}
+function openLinkSuggest(sugg,msg){
+  const m=$('modal');const e=entries.find(x=>x.id===wsActiveId);
+  let body;
+  if(sugg===null)body=`<div class="msub">${msg||'…'}</div>`;
+  else if(!sugg.length)body=`<div class="msub">${msg||'No clearly-related notes found.'}</div>`;
+  else body=sugg.map(c=>`<div class="trashrow"><span class="trashtxt">${esc(c.title||(c.text||'').slice(0,50))}</span><span class="trashacts"><button data-link="${c.id}">+ Link</button></span></div>`).join('');
+  m.innerHTML=`<h3>Suggested links</h3><div class="msub">AI-proposed notes related to “${esc((((e&&(e.title||e.text))||'this note')+'').slice(0,40))}”.</div><div style="margin:10px 0;max-height:46vh;overflow:auto">${body}</div><div class="mfoot"><button id="lsClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  m.querySelectorAll('[data-link]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.link;const cur=entries.find(x=>x.id===wsActiveId);
+    if(cur){cur.links=cur.links||[];if(!cur.links.includes(id)){cur.links.push(id);cur._mod=Date.now();
+      const other=entries.find(x=>x.id===id);if(other){other.links=other.links||[];if(!other.links.includes(cur.id)){other.links.push(cur.id);other._mod=Date.now();}}
+      saveEntries();}}
+    b.textContent='✓ Linked';b.disabled=true;
+  });
+  $('lsClose').onclick=()=>{$('overlay').classList.remove('open');renderWorkspace();};
+}
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
@@ -2415,6 +2446,7 @@ function wsEditorHTML(){
       <button class="ws-tbtn" id="wsImg" title="image"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
       <button class="ws-tbtn" id="wsScan" title="scan handwritten note"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M4 7V5a1 1 0 0 1 1-1h2M4 17v2a1 1 0 0 0 1 1h2M20 7V5a1 1 0 0 0-1-1h-2M20 17v2a1 1 0 0 1-1 1h-2"/><path d="M7 12h10M9 9h6M9 15h4"/></svg></button>
       <button class="ws-tbtn" id="wsLink" title="link notes"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+      <button class="ws-tbtn" id="wsLinkAI" title="suggest related notes to link">✦</button>
       <button class="ws-tbtn ${wsHistoryOpen?'on':''}" id="wsHist" title="history (${hist.length})"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></button>
       <button class="ws-tbtn" id="wsPin" title="pin a version now">⚑</button>
       <button class="ws-tbtn ${wsCardsOpen?'on':''}" id="wsCards" title="Anki cloze cards (${(e.cards||[]).length})"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><rect x="3" y="5" width="14" height="16" rx="2"/><path d="M7 5V3h14v16h-2"/></svg></button>
@@ -2489,6 +2521,7 @@ function wireWorkspace(){
   if($('wsReveal'))$('wsReveal').onclick=()=>{wsReviewReveal=true;renderWorkspace();};
   if($('srAgain'))$('srAgain').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,false);};
   if($('srGood'))$('srGood').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,true);};
+  if($('wsLinkAI'))$('wsLinkAI').onclick=aiSuggestLinks;
   ws.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>{graphColorBy=b.dataset.cb;renderWorkspace();});
   ws.querySelectorAll('[data-gb]').forEach(b=>b.onclick=()=>{wsGroupBy=b.dataset.gb;renderWorkspace();});
   ws.querySelectorAll('.ws-chaptoggle,.ws-subjhead,.ws-subcathead').forEach(b=>b.onclick=()=>{wsColTree[b.dataset.col]=!wsColTree[b.dataset.col];renderWorkspace();});
