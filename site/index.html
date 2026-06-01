@@ -56,6 +56,9 @@
   .newbtn{width:100%;text-align:left;background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);
     padding:15px 18px;margin-bottom:24px;cursor:pointer;font-family:var(--sans);font-size:15px;color:var(--muted);transition:.15s}
   .newbtn:hover{border-color:var(--faint);color:var(--ink)}
+  .composer-row{display:flex;gap:10px;margin-bottom:24px}
+  .composer-row .newbtn{margin-bottom:0}
+  .newbtn.alt{width:auto;flex:none;text-align:center;border-style:solid;color:var(--accent)}
   .composer-wrap{position:relative;margin-bottom:24px}
   .comp-top{display:flex;align-items:center;gap:8px;padding:4px 8px 0}
   .comp-top .titlein{flex:1}
@@ -1550,7 +1553,9 @@ function wireAreaStrip(){
 function composerHTML(){
   const t=TYPES[current];
   if(!composerOpen){
-    return `<button class="newbtn" id="openComposer">＋ New ${t.label.toLowerCase().replace(/ies$/,'y').replace(/s$/,'')}</button>`;
+    const newBtn=`<button class="newbtn" id="openComposer">＋ New ${t.label.toLowerCase().replace(/ies$/,'y').replace(/s$/,'')}</button>`;
+    if(current==='tasks')return `<div class="composer-row">${newBtn}<button class="newbtn alt" id="openBrainDump" title="Type tasks in plain language — the AI sorts, tags, and sets rhythms">✦ Brain-dump</button></div>`;
+    return newBtn;
   }
   const areaOpts=areas.map(a=>`<option value="${a.id}" ${draft.area===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
   const isK=current==='knowledge';
@@ -2454,6 +2459,7 @@ function wireSection(){
   wireAreaStrip();
   // collapsed composer
   if($('openComposer')){$('openComposer').onclick=()=>{startNew();};}
+  if($('openBrainDump'))$('openBrainDump').onclick=()=>openTaskDump();
   if($('cancelComposer'))$('cancelComposer').onclick=()=>{closeComposer();renderSection();};
   if($('optToggle'))$('optToggle').onclick=()=>{captureDraft();optionsOpen=!optionsOpen;renderSection();};
   if($('optClose'))$('optClose').onclick=()=>{captureDraft();optionsOpen=false;renderSection();};
