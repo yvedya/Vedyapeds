@@ -662,6 +662,7 @@
 </div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:6000;background:#1f1d1a;color:#fff;padding:10px 16px;border-radius:10px;font-family:'Inter',sans-serif;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);align-items:center;gap:14px;"><span id="toastMsg"></span><button id="toastAction" style="background:none;border:none;color:#9ec7a4;font-weight:600;cursor:pointer;font-size:13px;padding:0;">Undo</button></div>
 <button id="micBtn" title="Dictate into the text box you're typing in" style="display:none;position:fixed;bottom:16px;right:16px;z-index:5500;width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);align-items:center;justify-content:center;">🎤</button>
+<div id="offlineBar" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6000;background:#8a6d3b;color:#fff;padding:5px 12px;border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;box-shadow:0 3px 12px rgba(0,0,0,.18)"></div>
 <div id="bgLayer"></div>
 <div class="app" id="journalApp">
   <header>
@@ -2791,21 +2792,49 @@ const SB_EMAIL='vedya@vedyapeds.com'; // single hidden account; the password box
 let _sb=null; try{ _sb=window.supabase.createClient(SB_URL,SB_ANON); }catch(e){ console.error('Supabase failed to load',e); }
 
 let _uid=null;
-// Cloud-backed storage with the SAME get/set shape the app already uses,
-// so load()/saveEntries()/etc. keep working unchanged.
+// Local-first storage (same get/set shape the app already uses).
+// Writes save to a local cache instantly (works fully offline) AND to Supabase
+// when online; if offline, the key is queued ("dirty") and synced on reconnect.
+// Reads use Supabase when online, falling back to the local cache offline or for
+// keys with unsynced local edits (so offline edits are never lost or overwritten).
+const _CK=k=>'cache:'+(_uid||'anon')+':'+k;
+const _DKEY=()=>'dirty:'+(_uid||'anon');
+function _getDirty(){try{return new Set(JSON.parse(localStorage.getItem(_DKEY())||'[]'));}catch(e){return new Set();}}
+function _setDirty(s){try{localStorage.setItem(_DKEY(),JSON.stringify([...s]));}catch(e){}}
+function _markDirty(k){const s=_getDirty();s.add(k);_setDirty(s);updateOfflineUI();}
+function _clearDirty(k){const s=_getDirty();s.delete(k);_setDirty(s);updateOfflineUI();}
+async function _sbGet(k){const{data,error}=await _sb.from('store').select('value').eq('key',k).maybeSingle();if(error)throw error;return data&&data.value!=null?data.value:null;}
+async function _sbSet(k,v){const{error}=await _sb.from('store').upsert({user_id:_uid,key:k,value:v,updated_at:new Date().toISOString()},{onConflict:'user_id,key'});if(error)throw error;}
 function _cloudStorage(){
   return {
     get: async (k)=>{
-      const { data, error } = await _sb.from('store').select('value').eq('key',k).maybeSingle();
-      if(error){ console.error('storage.get',error); return null; }
-      return (data && data.value!=null) ? {value:data.value} : null;
+      if(_getDirty().has(k)){const c=localStorage.getItem(_CK(k));return c!=null?{value:c}:null;} // unsynced local edit wins
+      if(navigator.onLine){try{const v=await _sbGet(k);if(v!=null){try{localStorage.setItem(_CK(k),v);}catch(e){}}return v!=null?{value:v}:null;}catch(e){}}
+      const c=localStorage.getItem(_CK(k));return c!=null?{value:c}:null;
     },
     set: async (k,v)=>{
-      const { error } = await _sb.from('store').upsert({ user_id:_uid, key:k, value:v, updated_at:new Date().toISOString() }, { onConflict:'user_id,key' });
-      if(error){ console.error('storage.set',error); throw error; }
+      try{localStorage.setItem(_CK(k),v);}catch(e){}        // persist locally first (offline-safe)
+      if(navigator.onLine){try{await _sbSet(k,v);_clearDirty(k);return;}catch(e){}}
+      _markDirty(k);                                        // offline or failed -> queue for sync
     }
   };
 }
+async function _syncDirty(){
+  if(!navigator.onLine||!_sb||!_uid)return false;
+  const d=_getDirty();if(!d.size)return false;
+  let synced=false;
+  for(const k of [...d]){const v=localStorage.getItem(_CK(k));if(v==null){_clearDirty(k);continue;}try{await _sbSet(k,v);_clearDirty(k);synced=true;}catch(e){}}
+  return synced;
+}
+function updateOfflineUI(){
+  const el=document.getElementById('offlineBar');if(!el)return;
+  const pending=_getDirty().size;
+  if(!navigator.onLine){el.textContent='● Offline — your changes are saved on this device';el.style.display='block';}
+  else if(pending){el.textContent='Syncing '+pending+' change'+(pending>1?'s':'')+'…';el.style.display='block';}
+  else{el.style.display='none';}
+}
+window.addEventListener('online',async()=>{updateOfflineUI();const s=await _syncDirty();updateOfflineUI();if(s&&typeof showToast==='function')showToast('Back online — your changes synced.');});
+window.addEventListener('offline',updateOfflineUI);
 
 let _booted=false;
 async function _startApp(){
@@ -2816,6 +2845,7 @@ async function _startApp(){
   document.getElementById('authGate').style.display='none';
   document.getElementById('acctBar').style.display='flex';
   render(); await load(); render(); ensureThemes(()=>render());
+  updateOfflineUI(); _syncDirty().then(updateOfflineUI);
 }
 window.__signOut=async()=>{ try{ await _sb.auth.signOut(); }catch(e){} location.reload(); };
 window.__changePw=async()=>{
