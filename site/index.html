@@ -2671,6 +2671,17 @@ function drawGraph(notes){
 
 $('lbx').onclick=()=>$('lightbox').classList.remove('open');
 $('lightbox').onclick=e=>{if(e.target.id==='lightbox')$('lightbox').classList.remove('open');};
+// Re-sync from the cloud when returning to the app, so a stale copy on this
+// device can't overwrite newer changes made on another device. Skips while
+// you're actively editing, so it never interrupts typing.
+document.addEventListener('visibilitychange',async()=>{
+  if(document.visibilityState!=='visible'||typeof ready==='undefined'||!ready)return;
+  if(typeof composerOpen!=='undefined'&&composerOpen)return;
+  const ov=$('overlay');if(ov&&ov.classList.contains('open'))return;
+  if(current==='knowledge')return; // workspace auto-saves; avoid disrupting an open note
+  const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return;
+  try{await load();render();}catch(e){}
+});
 $('overlay').onclick=e=>{if(e.target.id==='overlay')$('overlay').classList.remove('open');};
 $('fileInput').onchange=e=>{processFiles(e.target.files);e.target.value='';setTimeout(()=>{wsImgTarget=null;},500);};
 $('homeLink').onclick=()=>go('home');
