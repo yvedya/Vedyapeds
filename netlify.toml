@@ -4,3 +4,7 @@
 [build]
   publish = "site"
   functions = "netlify/functions"
+
+# Email a backup every Monday at 13:00 UTC
+[functions."backup"]
+  schedule = "0 13 * * 1"

@@ -639,7 +639,7 @@
 </div>
 <div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;">
   <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
-  <button id="exportBtn" onclick="window.__exportData&&window.__exportData()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Download backup</button>
+  <button id="exportBtn" onclick="window.__openBackup&&window.__openBackup()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Backup</button>
   <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
   <button id="signOutBtn" onclick="window.__signOut&&window.__signOut()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Sign out</button>
 </div>
@@ -774,6 +774,62 @@ function openTrash(){
   $('closeTrash').onclick=()=>{$('overlay').classList.remove('open');render();};
 }
 window.__openTrash=openTrash;
+// ---- Backup & Restore ----
+function parseBackup(obj){
+  // Handles both formats: in-app download {entries,areas,...} and emailed {data:[{key,value}]}
+  if(obj&&Array.isArray(obj.data)){
+    const o={};obj.data.forEach(row=>{try{o[row.key]=JSON.parse(row.value);}catch(e){}});
+    return {entries:o['repo:entries']||[],areas:o['repo:areas']||null,study:o['repo:study']||[],wellness:o['repo:wellness']||{},prefs:o['repo:prefs']||null,trash:o['repo:trash']||[]};
+  }
+  return {entries:obj.entries||[],areas:obj.areas||null,study:obj.study||[],wellness:obj.wellness||{},prefs:obj.prefs||null,trash:obj.trash||[]};
+}
+async function applyRestore(p,mode){
+  if(mode==='replace'){
+    entries=p.entries||[];
+    if(p.areas&&p.areas.length)areas=p.areas;
+    studySources=p.study||[];
+    wellnessLog=p.wellness||{};
+    trash=p.trash||[];
+    if(p.prefs){homeMode=p.prefs.homeMode||homeMode;wsFontScale=p.prefs.wsFontScale||wsFontScale;}
+  }else{ // merge: add only items not already present
+    const he=new Set(entries.map(e=>e.id));(p.entries||[]).forEach(e=>{if(!he.has(e.id))entries.push(e);});
+    const ha=new Set(areas.map(a=>a.id));(p.areas||[]).forEach(a=>{if(!ha.has(a.id))areas.push(a);});
+    const hs=new Set(studySources.map(s=>s.id));(p.study||[]).forEach(s=>{if(!hs.has(s.id))studySources.push(s);});
+    Object.keys(p.wellness||{}).forEach(k=>{if(!(k in wellnessLog))wellnessLog[k]=p.wellness[k];});
+    const ht=new Set(trash.map(e=>e.id));(p.trash||[]).forEach(e=>{if(!ht.has(e.id))trash.push(e);});
+  }
+  await saveEntries();await saveAreas();await saveStudy();await saveWellness();await savePrefs();await saveTrash();
+}
+function openBackupModal(){
+  const m=$('modal');const bs="padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:var(--ink);font-size:13px";
+  m.innerHTML=`<h3>Backup &amp; Restore</h3><div class="msub">Download a copy of everything, or restore from a backup file (from the weekly email or a manual download).</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin:14px 0">
+      <button id="bkDownload" class="prim">Download a backup now</button>
+      <button id="bkRestoreBtn" style="${bs}">Restore from a backup file…</button>
+      <input type="file" id="bkFile" accept="application/json,.json" style="display:none">
+      <div id="bkSummary" style="display:none;font-size:13px;color:var(--ink);background:var(--accent-soft);padding:10px;border-radius:8px"></div>
+      <div id="bkChoices" style="display:none;flex-direction:column;gap:8px">
+        <button id="bkMerge" style="${bs}">Restore missing items only (safe)</button>
+        <button id="bkReplace" class="danger" style="${bs}">Replace everything with this backup</button>
+      </div>
+    </div>
+    <div class="mfoot"><button id="bkClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  let parsed=null;
+  $('bkDownload').onclick=()=>window.__exportData&&window.__exportData();
+  $('bkRestoreBtn').onclick=()=>$('bkFile').click();
+  $('bkFile').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+    r.onload=()=>{try{const obj=JSON.parse(r.result);parsed=parseBackup(obj);
+      const n=(parsed.entries||[]).length,a=(parsed.areas||[]).length,s=(parsed.study||[]).length;
+      $('bkSummary').style.display='block';$('bkSummary').textContent=`This backup has ${n} entries, ${a} areas, and ${s} study sources. Choose how to restore:`;
+      $('bkChoices').style.display='flex';
+    }catch(err){$('bkSummary').style.display='block';$('bkSummary').textContent='That file is not a valid backup.';$('bkChoices').style.display='none';}};
+    r.readAsText(f);e.target.value='';};
+  $('bkMerge').onclick=async()=>{if(!parsed)return;await applyRestore(parsed,'merge');alert('Restored missing items.');location.reload();};
+  $('bkReplace').onclick=async()=>{if(!parsed)return;if(!confirm('Replace ALL current data with this backup? Your current data will first download as a safety copy, then be overwritten.'))return;if(window.__exportData)window.__exportData();await applyRestore(parsed,'replace');alert('Restored from backup.');location.reload();};
+  $('bkClose').onclick=()=>$('overlay').classList.remove('open');
+}
+window.__openBackup=openBackupModal;
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
