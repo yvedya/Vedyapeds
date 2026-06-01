@@ -709,6 +709,7 @@ async function load(){
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
   try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;}}catch(e){}
+  try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
 async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale}));}catch(e){}}
@@ -745,6 +746,7 @@ function extractPalette(dataUrl,cb){
     cb({dom,accent});
   };
   img.onerror=()=>cb(null);
+  if(/^https?:/.test(dataUrl)) img.crossOrigin='anonymous';
   img.src=dataUrl;
 }
 function deepen(o){
@@ -764,7 +766,7 @@ function ensureThemes(cb){
   const need=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length&&!e.theme);
   if(!need.length){cb&&cb();return;}
   let done=0;
-  need.forEach(e=>{extractPalette(e.imgs[0],pal=>{if(pal)e.theme=pal;if(++done===need.length){saveEntries();cb&&cb();}});});
+  need.forEach(e=>{extractPalette(disp(e.imgs[0]),pal=>{if(pal)e.theme=pal;if(++done===need.length){saveEntries();cb&&cb();}});});
 }
 function dailyBgMemory(){
   const pool=bgMemories();if(!pool.length)return null;
@@ -781,13 +783,33 @@ function applyJournalTheme(){
   if(current==='knowledge'){if(layer)layer.style.opacity='0';return;}
   const mem=dailyBgMemory();
   if(!mem){if(layer)layer.style.opacity='0';return;}
-  if(layer){layer.style.backgroundImage=`url(${mem.imgs[0]})`;layer.style.opacity='1';}
+  if(layer){layer.style.backgroundImage=`url(${disp(mem.imgs[0])})`;layer.style.opacity='1';}
   if(mem.theme){
     const a=mem.theme.accent;
     root.style.setProperty('--accent',`rgb(${a.r},${a.g},${a.b})`);
     root.style.setProperty('--accent-soft',`rgba(${a.r},${a.g},${a.b},0.12)`);
   }
 }
+
+// ---- private photo storage (Supabase Storage) ----
+// Images are uploaded as real files to the private 'photos' bucket; entries store
+// the file PATH. For display we fetch a short-lived signed URL per path and cache it.
+// Existing base64/data-URL images still render directly (backward compatible).
+const _urlMap={}; // storage path -> signed URL (this session)
+function isStoragePath(v){ return !!v && typeof v==='string' && !/^data:|^https?:|^blob:/.test(v); }
+function disp(v){ return isStoragePath(v) ? (_urlMap[v]||'') : (v||''); }
+async function refreshImageUrls(){
+  if(typeof _sb==='undefined'||!_sb) return;
+  const paths=new Set();
+  entries.forEach(e=>(e.imgs||[]).forEach(v=>{ if(isStoragePath(v)) paths.add(v); }));
+  const need=[...paths].filter(p=>!_urlMap[p]);
+  if(!need.length) return;
+  try{
+    const {data,error}=await _sb.storage.from('photos').createSignedUrls(need,3600);
+    if(!error&&data) data.forEach(d=>{ if(d&&d.signedUrl&&d.path) _urlMap[d.path]=d.signedUrl; });
+  }catch(e){ console.warn('signed url refresh failed',e); }
+}
+function openLb(ref){ const u=disp(ref); if(!u)return; const im=$('lbimg'); if(im)im.src=u; const lb=$('lightbox'); if(lb)lb.classList.add('open'); }
 
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -1035,14 +1057,22 @@ function processFiles(files){
       if(!isoDate)isoDate=dateFromFilename(f.name); // fallback: parse date from filename
       const gps=exif?exif.gps:null;
       const blob=new Blob([buf],{type:f.type});const url=URL.createObjectURL(blob);
-      const img=new Image();img.onload=()=>{
+      const img=new Image();img.onload=async()=>{
         URL.revokeObjectURL(url);
-        const max=1000;let{width:w,height:h}=img;
+        const max=2000;let{width:w,height:h}=img;
         if(w>max||h>max){const s=max/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
         const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
-        const data=c.toDataURL('image/jpeg',0.72);
-        if(wsImgTarget){const note=entries.find(x=>x.id===wsImgTarget);if(note){note.imgs=note.imgs||[];note.imgs.push(data);if(isoDate&&!note.when)note.when=isoDate;if(gps&&!note.gps)note.gps=gps;commitWsSave?commitWsSave(true):0;saveEntries();renderWorkspace();}}
-        else{pendingImgs.push(data);if(isoDate&&!draft.when){draft.when=isoDate;const wf=$('when');if(wf)wf.value=isoDate;}if(gps)pendingGps=gps;renderThumbs();}
+        const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.85));
+        if(!blob){alert('Could not process that image.');return;}
+        const path=`${_uid}/${(window.crypto&&crypto.randomUUID?crypto.randomUUID():uid()+uid())}.jpg`;
+        try{
+          const up=await _sb.storage.from('photos').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+          if(up.error){console.error('upload',up.error);alert('Photo upload failed: '+up.error.message);return;}
+          const su=await _sb.storage.from('photos').createSignedUrl(path,3600);
+          if(su.data&&su.data.signedUrl)_urlMap[path]=su.data.signedUrl;
+        }catch(err){console.error(err);alert('Photo upload failed — check your connection and try again.');return;}
+        if(wsImgTarget){const note=entries.find(x=>x.id===wsImgTarget);if(note){note.imgs=note.imgs||[];note.imgs.push(path);if(isoDate&&!note.when)note.when=isoDate;if(gps&&!note.gps)note.gps=gps;commitWsSave?commitWsSave(true):0;saveEntries();renderWorkspace();}}
+        else{pendingImgs.push(path);if(isoDate&&!draft.when){draft.when=isoDate;const wf=$('when');if(wf)wf.value=isoDate;}if(gps)pendingGps=gps;renderThumbs();}
       };img.onerror=()=>URL.revokeObjectURL(url);img.src=url;
     };
     r.readAsArrayBuffer(f);
@@ -1050,7 +1080,7 @@ function processFiles(files){
 }
 let pendingGps=null;
 function renderThumbs(){const t=$('thumbs');if(!t)return;
-  t.innerHTML=pendingImgs.map((src,i)=>`<div class="th"><img src="${src}"><button data-i="${i}">&times;</button></div>`).join('');
+  t.innerHTML=pendingImgs.map((src,i)=>`<div class="th"><img src="${disp(src)}"><button data-i="${i}">&times;</button></div>`).join('');
   t.querySelectorAll('button').forEach(b=>b.onclick=()=>{pendingImgs.splice(+b.dataset.i,1);renderThumbs();});
 }
 
@@ -1196,12 +1226,12 @@ function entryHTML(e){
   // image-forward photo memory card
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
     const tint=e.theme?`style="--mtint:${rgba(e.theme.accent,0.16)};--mtint2:${rgba(e.theme.dom,0.10)}"`:'';
-    const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map(src=>`<img src="${src}" data-full="${src}">`).join('')}</div>`:'';
+    const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:'';
     const tags=(e.tags||[]).map(tg=>`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`).join('');
     const apill=a?`<span class="areapill" style="background:${a.color}22;color:${a.color}">${esc(a.name)}</span>`:'';
     const when=e.when?`<span class="when ${isFuture(e.when)?'future':''}">${relTime(e.when)}</span>`:'';
     return `<div class="entry photomem ${e.bg?'is-bg':''}" ${tint}>
-      <div class="pm-hero"><img src="${e.imgs[0]}" data-full="${e.imgs[0]}">
+      <div class="pm-hero"><img src="${disp(e.imgs[0])}" data-full="${e.imgs[0]}">
         <button class="pm-bg ${e.bg?'on':''}" data-bg="${e.id}" title="${e.bg?'used as background':'use as daily background'}">${e.bg?'★':'☆'}</button>
       </div>
       <div class="pm-body"><div class="text md">${mdRender(e.text)}</div>${gallery}
@@ -1215,7 +1245,7 @@ function entryHTML(e){
   const check=t.check?`<div class="check" data-id="${e.id}"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`:'';
   const aline=a?`<div class="arealine" style="background:${a.color}"></div>`:'';
   const titleEl=(t.titled&&e.title)?`<div class="etitle">${esc(e.title)}</div>`:'';
-  const imgs=(e.imgs&&e.imgs.length)?`<div class="imgs">${e.imgs.map(src=>`<img src="${src}" data-full="${src}">`).join('')}</div>`:'';
+  const imgs=(e.imgs&&e.imgs.length)?`<div class="imgs">${e.imgs.map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:'';
   let linksEl='';
   if(e.links&&e.links.length){
     const valid=e.links.map(id=>entries.find(x=>x.id===id)).filter(Boolean);
@@ -1287,7 +1317,7 @@ function renderHome(){
   if(homeMode==='journal'){
     // recent photo memories for a gallery strip
     const photoMems=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,4);
-    const strip=photoMems.length?`<div class="jr-strip">${photoMems.map(m=>`<button class="jr-photo" data-open-mem="${m.id}" style="background-image:url(${m.imgs[0]})"><span class="jr-photo-cap">${esc((m.text||'').slice(0,40))}</span></button>`).join('')}</div>`:'';
+    const strip=photoMems.length?`<div class="jr-strip">${photoMems.map(m=>`<button class="jr-photo" data-open-mem="${m.id}" style="background-image:url(${disp(m.imgs[0])})"><span class="jr-photo-cap">${esc((m.text||'').slice(0,40))}</span></button>`).join('')}</div>`:'';
     const recentRefs=entries.filter(e=>e.type==='reflections').sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,2);
     const refsEl=recentRefs.length?recentRefs.map(r=>`<div class="jr-reflection">${mdRender(r.text.slice(0,400))}${r.text.length>400?'…':''}<div class="jr-rdate">${r.when?relTime(r.when):''}</div></div>`).join(''):'<div class="none">No reflections yet.</div>';
     const tasksGoals=entries.filter(e=>(e.type==='tasks'||e.type==='goals')&&!e.done).sort((a,b)=>(a.when||'9999')<(b.when||'9999')?-1:1).slice(0,6);
@@ -2082,7 +2112,7 @@ function wsEditorHTML(){
   const areaOpts=areas.map(a=>`<option value="${a.id}" ${e.area===a.id?'selected':''}>${esc(a.name)}</option>`).join('');
   const metaFields=SOURCES[src].fields.map(f=>`<input class="ws-meta-f" data-mk="${f.k}" placeholder="${f.ph}" value="${esc((e.meta||{})[f.k]||'')}">`).join('');
   const tags=(e.tags||[]).map(t=>`<span class="ws-tag">#${esc(t)}</span>`).join('');
-  const imgs=(e.imgs&&e.imgs.length)?`<div class="ws-imgs">${e.imgs.map((s,i)=>`<div class="ws-img"><img src="${s}" data-full="${s}"><button data-rmimg="${i}">✕</button></div>`).join('')}</div>`:'';
+  const imgs=(e.imgs&&e.imgs.length)?`<div class="ws-imgs">${e.imgs.map((s,i)=>`<div class="ws-img"><img src="${disp(s)}" data-full="${s}"><button data-rmimg="${i}">✕</button></div>`).join('')}</div>`:'';
   const links=(e.links||[]).map(id=>entries.find(x=>x.id===id)).filter(Boolean);
   const linksEl=links.length?`<div class="ws-links"><div class="ws-links-h">Linked notes</div>${links.map(le=>`<button class="ws-link" data-open="${le.id}">↳ ${esc(le.title||le.text.slice(0,40))}</button>`).join('')}</div>`:'';
   const hist=(e.history||[]);
