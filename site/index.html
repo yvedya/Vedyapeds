@@ -629,6 +629,8 @@
   .trashacts button{font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;color:var(--ink)}
   button.danger{color:#b04a3a;border-color:#e3c4bd}
   #trashlist{max-height:50vh;overflow:auto;margin:10px 0}
+  #micBtn.rec{background:#c0392b;animation:micpulse 1.2s infinite}
+  @keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(192,57,58,.5)}70%{box-shadow:0 0 0 12px rgba(192,57,58,0)}100%{box-shadow:0 0 0 0 rgba(192,57,58,0)}}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -652,6 +654,7 @@
   <button id="signOutBtn" onclick="window.__signOut&&window.__signOut()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Sign out</button>
 </div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:6000;background:#1f1d1a;color:#fff;padding:10px 16px;border-radius:10px;font-family:'Inter',sans-serif;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);align-items:center;gap:14px;"><span id="toastMsg"></span><button id="toastAction" style="background:none;border:none;color:#9ec7a4;font-weight:600;cursor:pointer;font-size:13px;padding:0;">Undo</button></div>
+<button id="micBtn" title="Dictate into the text box you're typing in" style="display:none;position:fixed;bottom:16px;right:16px;z-index:5500;width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);align-items:center;justify-content:center;">🎤</button>
 <div id="bgLayer"></div>
 <div class="app" id="journalApp">
   <header>
@@ -726,7 +729,7 @@ async function load(){
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
   try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';}}catch(e){}
-  applyTheme();
+  applyTheme();setupMic();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
@@ -734,6 +737,24 @@ async function load(){
 async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme}));}catch(e){}}
 function applyTheme(){document.documentElement.classList.toggle('dark',theme==='dark');const b=$('themeBtn');if(b)b.textContent=theme==='dark'?'☀':'☾';}
 window.__toggleTheme=()=>{theme=theme==='dark'?'light':'dark';applyTheme();savePrefs();};
+// ---- Voice capture (browser speech-to-text, free) ----
+const _SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let _recog=null,_micTarget=null,_micOn=false;
+function setupMic(){
+  const btn=$('micBtn');if(!btn)return;
+  if(!_SR){btn.style.display='none';return;}
+  btn.style.display='flex';
+  btn.onclick=()=>{
+    if(_micOn){try{_recog&&_recog.stop();}catch(e){}return;}
+    if(!_micTarget){showToast('Tap a text box first, then the mic.');return;}
+    try{_recog=new _SR();}catch(e){showToast('Voice input not available here.');return;}
+    _recog.lang='en-US';_recog.interimResults=false;_recog.continuous=true;
+    _recog.onresult=ev=>{let txt='';for(let i=ev.resultIndex;i<ev.results.length;i++){if(ev.results[i].isFinal)txt+=ev.results[i][0].transcript;}txt=txt.trim();if(txt&&_micTarget){const v=_micTarget.value||'';_micTarget.value=v+((v&&!/\s$/.test(v))?' ':'')+txt;_micTarget.dispatchEvent(new Event('input',{bubbles:true}));}};
+    _recog.onend=()=>{_micOn=false;btn.classList.remove('rec');btn.textContent='🎤';};
+    _recog.onerror=()=>{_micOn=false;btn.classList.remove('rec');btn.textContent='🎤';};
+    try{_recog.start();_micOn=true;btn.classList.add('rec');btn.textContent='⏹';}catch(e){}
+  };
+}
 async function saveStudy(){try{await window.storage.set('repo:study',JSON.stringify(studySources));}catch(e){console.error(e);}}
 async function saveWellness(){try{await window.storage.set('repo:wellness',JSON.stringify(wellnessLog));}catch(e){console.error(e);}}
 async function saveEntries(){try{await window.storage.set('repo:entries',JSON.stringify(entries));}catch(e){console.error(e);alert('Save failed — storage may be full (images are large). Try fewer/smaller images.');}}
@@ -2749,6 +2770,8 @@ document.addEventListener('visibilitychange',async()=>{
   const ae=document.activeElement;if(ae&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))return;
   try{await load();render();}catch(e){}
 });
+// Track the text field to dictate into (for the voice mic button)
+document.addEventListener('focusin',e=>{const t=e.target;if(t&&(t.tagName==='TEXTAREA'||(t.tagName==='INPUT'&&/^(text|search|)$/i.test(t.type))))_micTarget=t;});
 $('overlay').onclick=e=>{if(e.target.id==='overlay')$('overlay').classList.remove('open');};
 $('fileInput').onchange=e=>{processFiles(e.target.files);e.target.value='';setTimeout(()=>{wsImgTarget=null;},500);};
 $('homeLink').onclick=()=>go('home');
