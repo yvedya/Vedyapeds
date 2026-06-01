@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Repository</title>
+<title>vedya</title>
 <style>
   :root{
     --bg:#faf9f6; --surface:#ffffff; --ink:#1f1d1a; --muted:#8a8780;
@@ -647,6 +647,8 @@
   .wel-trend-svg{width:100%;height:66px;display:block}
   .wel-trend-dots{display:flex;gap:2px;flex-wrap:wrap}
   .wel-trend-dots .wel-dot{width:7px;height:7px}
+  .ti-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .ti-imgs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -655,7 +657,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Repository">
+<meta name="apple-mobile-web-app-title" content="vedya">
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
 </head>
 <body>
@@ -2143,11 +2145,12 @@ function renderTimelineInner(viewToggle){
     const a=areaById(e.area);const fut=isFuture(e.when);
     html+=`<div class="tl-item ${fut?'future':''}" data-tl="${e.id}"><div class="rail"><div class="node" ${a?`style="border-color:${a.color}"`:''}></div></div>
       <div class="ti-card"><div class="ti-when">${relTime(e.when)}</div>
-      <div class="ti-text">${esc(e.title||e.text)}<span class="ti-sec">${TYPES[e.type].label}${a?' · '+esc(a.name):''}</span></div></div></div>`;
+      <div class="ti-text">${esc(e.title||e.text)}<span class="ti-sec">${TYPES[e.type].label}${a?' · '+esc(a.name):''}</span></div>${(e.imgs&&e.imgs.length)?`<div class="ti-imgs">${e.imgs.slice(0,4).map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:''}</div></div>`;
   });
   $('view').innerHTML=html;wireAreaStrip();
   $('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});
   $('view').querySelectorAll('[data-tl]').forEach(el=>el.onclick=()=>gotoEntry(el.dataset.tl));
+  $('view').querySelectorAll('.ti-imgs img').forEach(im=>im.onclick=ev=>{ev.stopPropagation();openLb(im.dataset.full);});
 }
 
 // ---------- SECTION ----------
