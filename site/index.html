@@ -405,6 +405,9 @@
     .ws-panes{grid-template-columns:1fr}
     .ws-preview{max-height:none}
     .ws-editor{padding:16px 18px 60px}
+    nav{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;justify-content:flex-start;width:100%;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+    nav::-webkit-scrollbar{display:none}
+    nav>button{flex:0 0 auto;white-space:nowrap}
   }
 
   /* background layer */
@@ -1434,6 +1437,8 @@ function renderNav(){
     `<button class="${!onP&&current==='logs'?'on':''}" data-k="logs">Log</button>`+
     `<button class="nav-knowledge ${current==='knowledge'?'on':''}" data-k="knowledge" title="Knowledge" aria-label="Knowledge">K</button>`;
   $('nav').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.k));
+  const _n=$('nav'),_act=_n&&_n.querySelector('button.on');
+  if(_n&&_act&&_n.scrollWidth>_n.clientWidth)_n.scrollLeft=_act.offsetLeft-_n.clientWidth/2+_act.offsetWidth/2;
 }
 function go(k){pursuitsActive=false;current=k;activeTag=null;search='';menuOpen=null;
   if(k==='study'||k==='wellness'){const b=document.querySelector('[data-k="'+k+'"].has-badge');if(b)b.classList.remove('has-badge');}
