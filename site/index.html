@@ -957,29 +957,6 @@ function openSearch(){
   setTimeout(()=>inp.focus(),30);
 }
 window.__openSearch=openSearch;
-// ---- Note templates (start a Knowledge note with structure) ----
-const TEMPLATES={
-  drug:{label:'Drug',md:'# Drug name\n\n**Class:** \n\n**Mechanism:** \n\n**Dose:** \n\n**Indications:** \n\n**Contraindications / cautions:** \n\n**Side effects:** \n\n**Monitoring:** \n\n**Pearls:** \n'},
-  condition:{label:'Condition / disease',md:'# Condition\n\n**Definition:** \n\n**Presentation:** \n\n**Workup / diagnosis:** \n\n**Management:** \n\n**Complications:** \n\n**Pearls:** \n'},
-  article:{label:'Article summary',md:'# Title\n\n**Authors / journal / year:** \n\n**Question:** \n\n**Methods:** \n\n**Key findings:** \n\n**Takeaway:** \n'},
-  procedure:{label:'Procedure',md:'# Procedure\n\n**Indications:** \n\n**Contraindications:** \n\n**Equipment:** \n\n**Steps:**\n1. \n\n**Complications:** \n'}
-};
-function openTemplates(){
-  const m=$('modal');
-  m.innerHTML=`<h3>New note from template</h3><div class="msub">Start a Knowledge note with a ready-made clinical structure.</div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin:12px 0">${Object.keys(TEMPLATES).map(k=>`<button data-tpl="${k}" style="text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:11px 12px;cursor:pointer;color:var(--ink);font-size:14px">${TEMPLATES[k].label}</button>`).join('')}</div>
-    <div class="mfoot"><button id="tplClose" class="prim">Cancel</button></div>`;
-  $('overlay').classList.add('open');
-  m.querySelectorAll('[data-tpl]').forEach(b=>b.onclick=async()=>{
-    const tpl=TEMPLATES[b.dataset.tpl];
-    const ne={id:uid(),type:'knowledge',area:(areas[0]||{}).id,title:null,text:tpl.md,source:'field',meta:{},tags:[],when:todayISO(),imgs:[],links:[],done:false,created:new Date().toISOString(),_mod:Date.now()};
-    entries.push(ne); await saveEntries();
-    $('overlay').classList.remove('open');
-    gotoEntry(ne.id); // opens it in the Knowledge workspace via the existing path
-  });
-  $('tplClose').onclick=()=>$('overlay').classList.remove('open');
-}
-window.__openTemplates=openTemplates;
 // ---- Consolidated menu (declutters the bottom bar) ----
 function openMenu(){
   const m=$('modal');
@@ -987,7 +964,6 @@ function openMenu(){
     {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
     {label:'✦  Ask / review my week', fn:'__openAI'},
     {label:'🔍  Search everything', fn:'__openSearch'},
-    {label:'📋  New from template', fn:'__openTemplates'},
     {label:'🗑  Trash', fn:'__openTrash'},
     {label:'⬇  Backup & restore', fn:'__openBackup'},
     {label:'🔑  Change password', fn:'__changePw'},
