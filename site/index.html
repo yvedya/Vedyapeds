@@ -12,6 +12,13 @@
     --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
     --serif:'Newsreader',Georgia,serif;
   }
+  html.dark{
+    --bg:#1b1a16; --surface:#242320; --ink:#ece9e1; --muted:#9c988e;
+    --faint:#56524a; --line:#34312b; --accent:#8fb596; --accent-soft:#262e27;
+    --done:#6f6b62;
+  }
+  html.dark #acctBar button{background:rgba(40,38,34,.92)!important;color:#9c988e!important;border-color:#34312b!important}
+  html,body{transition:background-color .2s ease,color .2s ease}
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:var(--sans);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.55}
   .app{max-width:780px;margin:0 auto;padding:0 24px 120px}
@@ -638,6 +645,7 @@
   </div>
 </div>
 <div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;">
+  <button id="themeBtn" onclick="window.__toggleTheme&&window.__toggleTheme()" title="Toggle dark mode" style="padding:6px 10px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;">☾</button>
   <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
   <button id="exportBtn" onclick="window.__openBackup&&window.__openBackup()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Backup</button>
   <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
@@ -685,7 +693,7 @@ const SOURCES={
 };
 const SOURCE_ORDER=['field','textbook','article'];
 const SOURCE_COLORS={field:'#D85A30',textbook:'#378ADD',article:'#7F77DD'};
-let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false, trash=[];
+let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false, trash=[], theme='light';
 let curSource='field', graphColorBy='area', collapsedChapters={};
 let composerOpen=false, previewOn=false, optionsOpen=false, toolbarMin=false, editingId=null;
 let draft={title:'',text:'',tag:'',when:'',area:null};
@@ -717,12 +725,15 @@ async function load(){
   if(!areas.length)areas=DEFAULT_AREAS.slice();
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
-  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;}}catch(e){}
+  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';}}catch(e){}
+  applyTheme();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
-async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale}));}catch(e){}}
+async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme}));}catch(e){}}
+function applyTheme(){document.documentElement.classList.toggle('dark',theme==='dark');const b=$('themeBtn');if(b)b.textContent=theme==='dark'?'☀':'☾';}
+window.__toggleTheme=()=>{theme=theme==='dark'?'light':'dark';applyTheme();savePrefs();};
 async function saveStudy(){try{await window.storage.set('repo:study',JSON.stringify(studySources));}catch(e){console.error(e);}}
 async function saveWellness(){try{await window.storage.set('repo:wellness',JSON.stringify(wellnessLog));}catch(e){console.error(e);}}
 async function saveEntries(){try{await window.storage.set('repo:entries',JSON.stringify(entries));}catch(e){console.error(e);alert('Save failed — storage may be full (images are large). Try fewer/smaller images.');}}
