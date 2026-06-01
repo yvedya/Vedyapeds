@@ -3005,6 +3005,11 @@ document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(typeof ready!=='undefined'&&ready&&window.__openSearch)window.__openSearch();return;}
   if(e.key==='Escape'){const ov=$('overlay');if(ov&&ov.classList.contains('open')){ov.classList.remove('open');return;}const lb=$('lightbox');if(lb&&lb.classList.contains('open'))lb.classList.remove('open');}
 });
+// Auto-logout after inactivity (protects shared/hospital computers). ~30 min; easy to adjust.
+const AUTOLOCK_MS=30*60*1000;
+let _idleTimer=null;
+function _resetIdle(){clearTimeout(_idleTimer);if(typeof _uid==='undefined'||!_uid)return;_idleTimer=setTimeout(()=>{if(window.__signOut)window.__signOut();},AUTOLOCK_MS);}
+['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(ev=>document.addEventListener(ev,_resetIdle,{passive:true}));
 $('overlay').onclick=e=>{if(e.target.id==='overlay')$('overlay').classList.remove('open');};
 $('fileInput').onchange=e=>{processFiles(e.target.files);e.target.value='';setTimeout(()=>{wsImgTarget=null;},500);};
 $('homeLink').onclick=()=>go('home');
@@ -3099,6 +3104,7 @@ async function _startApp(){
   document.getElementById('acctBar').style.display='flex';
   render(); await load(); render(); ensureThemes(()=>render());
   updateOfflineUI(); _syncDirty().then(updateOfflineUI);
+  _resetIdle();
 }
 window.__signOut=async()=>{ try{ await _sb.auth.signOut(); }catch(e){} location.reload(); };
 window.__changePw=async()=>{
