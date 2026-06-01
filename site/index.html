@@ -1004,6 +1004,33 @@ function openLinkSuggest(sugg,msg){
   });
   $('lsClose').onclick=()=>{$('overlay').classList.remove('open');renderWorkspace();};
 }
+// ---- Quiz-me: AI-generated self-test questions from a note ----
+let _quiz={items:[],idx:0,show:false};
+async function quizNote(){
+  const e=entries.find(x=>x.id===wsActiveId); if(!e||!((e.text||'').trim())){showToast('Open a note with some content to quiz on.');return;}
+  openQuiz('loading');
+  try{
+    const ans=await askAnthropic(`From this medical study note, write 5 short self-test questions with concise answers. Reply ONLY as a JSON array: [{"q":"...","a":"..."}]. No other text.\n\nTITLE: ${e.title||''}\nNOTE: ${(e.text||'').slice(0,2500)}`,900);
+    const arr=JSON.parse((ans.match(/\[[\s\S]*\]/)||['[]'])[0]);
+    _quiz={items:(Array.isArray(arr)?arr:[]).filter(x=>x&&x.q),idx:0,show:false};
+    openQuiz();
+  }catch(err){ openQuiz('error'); }
+}
+function openQuiz(state){
+  const m=$('modal');
+  if(state==='loading'){m.innerHTML=`<h3>Quiz</h3><div class="msub">Writing questions…</div><div class="mfoot"><button id="qzClose" class="prim">Cancel</button></div>`;$('overlay').classList.add('open');$('qzClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  if(state==='error'||!_quiz.items.length){m.innerHTML=`<h3>Quiz</h3><div class="msub">${state==='error'?'Could not generate a quiz — check your connection.':'No questions could be generated for this note.'}</div><div class="mfoot"><button id="qzClose" class="prim">Done</button></div>`;$('overlay').classList.add('open');$('qzClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  const it=_quiz.items[_quiz.idx];
+  m.innerHTML=`<h3>Quiz · ${_quiz.idx+1} / ${_quiz.items.length}</h3>
+    <div style="font-size:15px;color:var(--ink);margin:14px 0;line-height:1.5">${esc(it.q)}</div>
+    <div style="margin:10px 0">${_quiz.show?`<div style="background:var(--accent-soft);border-radius:10px;padding:12px 14px;font-size:14px;color:var(--ink);line-height:1.5">${esc(it.a||'')}</div>`:`<button class="add" id="qzShow">Show answer</button>`}</div>
+    <div class="mfoot">${_quiz.idx>0?'<button id="qzPrev" style="margin-right:auto;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)">‹ Back</button>':''}${_quiz.idx<_quiz.items.length-1?'<button id="qzNext" class="prim">Next ›</button>':'<button id="qzClose" class="prim">Done</button>'}</div>`;
+  $('overlay').classList.add('open');
+  if($('qzShow'))$('qzShow').onclick=()=>{_quiz.show=true;openQuiz();};
+  if($('qzNext'))$('qzNext').onclick=()=>{_quiz.idx++;_quiz.show=false;openQuiz();};
+  if($('qzPrev'))$('qzPrev').onclick=()=>{_quiz.idx--;_quiz.show=false;openQuiz();};
+  if($('qzClose'))$('qzClose').onclick=()=>$('overlay').classList.remove('open');
+}
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
@@ -2450,6 +2477,7 @@ function wsEditorHTML(){
       <button class="ws-tbtn ${wsHistoryOpen?'on':''}" id="wsHist" title="history (${hist.length})"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></button>
       <button class="ws-tbtn" id="wsPin" title="pin a version now">⚑</button>
       <button class="ws-tbtn ${wsCardsOpen?'on':''}" id="wsCards" title="Anki cloze cards (${(e.cards||[]).length})"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><rect x="3" y="5" width="14" height="16" rx="2"/><path d="M7 5V3h14v16h-2"/></svg></button>
+      <button class="ws-tbtn" id="wsQuiz" title="quiz yourself on this note" style="font-weight:600">?</button>
       <button class="ws-tbtn ws-del" id="wsDel" title="delete note">✕</button>
     </div>
     <div class="ws-subjrow">
@@ -2522,6 +2550,7 @@ function wireWorkspace(){
   if($('srAgain'))$('srAgain').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,false);};
   if($('srGood'))$('srGood').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,true);};
   if($('wsLinkAI'))$('wsLinkAI').onclick=aiSuggestLinks;
+  if($('wsQuiz'))$('wsQuiz').onclick=quizNote;
   ws.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>{graphColorBy=b.dataset.cb;renderWorkspace();});
   ws.querySelectorAll('[data-gb]').forEach(b=>b.onclick=()=>{wsGroupBy=b.dataset.gb;renderWorkspace();});
   ws.querySelectorAll('.ws-chaptoggle,.ws-subjhead,.ws-subcathead').forEach(b=>b.onclick=()=>{wsColTree[b.dataset.col]=!wsColTree[b.dataset.col];renderWorkspace();});
