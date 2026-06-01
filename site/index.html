@@ -615,6 +615,13 @@
   .lightbox img{max-width:100%;max-height:100%;border-radius:10px}
   .lightbox .x{position:absolute;top:20px;right:24px;color:#fff;font-size:26px;cursor:pointer;background:none;border:none}
   @media(max-width:560px){header h1{font-size:34px}.app{padding:0 16px 100px}}
+  #toast{display:none}
+  .trashrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .trashtxt{flex:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .trashacts{display:flex;gap:6px;flex-shrink:0}
+  .trashacts button{font-size:12px;padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;color:var(--ink)}
+  button.danger{color:#b04a3a;border-color:#e3c4bd}
+  #trashlist{max-height:50vh;overflow:auto;margin:10px 0}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -631,10 +638,12 @@
   </div>
 </div>
 <div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;">
+  <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
   <button id="exportBtn" onclick="window.__exportData&&window.__exportData()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Download backup</button>
   <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
   <button id="signOutBtn" onclick="window.__signOut&&window.__signOut()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Sign out</button>
 </div>
+<div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:6000;background:#1f1d1a;color:#fff;padding:10px 16px;border-radius:10px;font-family:'Inter',sans-serif;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);align-items:center;gap:14px;"><span id="toastMsg"></span><button id="toastAction" style="background:none;border:none;color:#9ec7a4;font-weight:600;cursor:pointer;font-size:13px;padding:0;">Undo</button></div>
 <div id="bgLayer"></div>
 <div class="app" id="journalApp">
   <header>
@@ -676,7 +685,7 @@ const SOURCES={
 };
 const SOURCE_ORDER=['field','textbook','article'];
 const SOURCE_COLORS={field:'#D85A30',textbook:'#378ADD',article:'#7F77DD'};
-let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false;
+let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false, trash=[];
 let curSource='field', graphColorBy='area', collapsedChapters={};
 let composerOpen=false, previewOn=false, optionsOpen=false, toolbarMin=false, editingId=null;
 let draft={title:'',text:'',tag:'',when:'',area:null};
@@ -709,6 +718,7 @@ async function load(){
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
   try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;}}catch(e){}
+  try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
@@ -717,6 +727,53 @@ async function saveStudy(){try{await window.storage.set('repo:study',JSON.string
 async function saveWellness(){try{await window.storage.set('repo:wellness',JSON.stringify(wellnessLog));}catch(e){console.error(e);}}
 async function saveEntries(){try{await window.storage.set('repo:entries',JSON.stringify(entries));}catch(e){console.error(e);alert('Save failed — storage may be full (images are large). Try fewer/smaller images.');}}
 async function saveAreas(){try{await window.storage.set('repo:areas',JSON.stringify(areas));}catch(e){console.error(e);}}
+// ---- Trash: soft delete + undo + restore ----
+async function saveTrash(){try{await window.storage.set('repo:trash',JSON.stringify(trash));}catch(e){console.error(e);}}
+async function softDelete(ids){
+  const set=new Set(ids);
+  const moved=entries.filter(e=>set.has(e.id));
+  if(!moved.length)return;
+  const now=new Date().toISOString();
+  moved.forEach(e=>{e._deletedAt=now;trash.unshift(e);});
+  entries=entries.filter(e=>!set.has(e.id));
+  await saveEntries();await saveTrash();
+}
+async function restoreFromTrash(ids){
+  const set=new Set(ids);
+  trash.filter(e=>set.has(e.id)).forEach(e=>{delete e._deletedAt;entries.push(e);});
+  trash=trash.filter(e=>!set.has(e.id));
+  await saveEntries();await saveTrash();
+}
+async function purgeFromTrash(ids){
+  const set=new Set(ids);
+  trash=trash.filter(e=>!set.has(e.id));
+  entries.forEach(e=>{if(e.links)e.links=e.links.filter(l=>!set.has(l));});
+  await saveEntries();await saveTrash();
+}
+let _toastTimer=null;
+function showToast(msg,actionLabel,actionFn){
+  const t=$('toast');if(!t)return;
+  $('toastMsg').textContent=msg;
+  const a=$('toastAction');
+  if(actionFn){a.style.display='inline';a.textContent=actionLabel||'Undo';a.onclick=()=>{hideToast();actionFn();};}
+  else a.style.display='none';
+  t.style.display='flex';
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(hideToast,6000);
+}
+function hideToast(){const t=$('toast');if(t)t.style.display='none';clearTimeout(_toastTimer);}
+function openTrash(){
+  const m=$('modal');
+  const items=trash.slice().sort((a,b)=>(b._deletedAt||'').localeCompare(a._deletedAt||''));
+  const labelOf=e=>{const ty=(TYPES[e.type]&&TYPES[e.type].label)||e.type||'Item';const txt=((e.title||e.text||'')+'').trim().replace(/\s+/g,' ').slice(0,60)||'(empty)';return esc(ty+' · '+txt);};
+  const list=items.length?items.map(e=>`<div class="trashrow"><span class="trashtxt">${labelOf(e)}</span><span class="trashacts"><button data-restore="${e.id}">Restore</button><button data-purge="${e.id}" class="danger">Delete forever</button></span></div>`).join(''):'<div class="msub">Trash is empty.</div>';
+  m.innerHTML=`<h3>Trash</h3><div class="msub">Deleted items are kept here until you empty them. Restore anything, or delete it forever.</div><div id="trashlist">${list}</div><div class="mfoot">${items.length?'<button id="emptyTrash" class="danger" style="margin-right:auto">Empty trash</button>':''}<button id="closeTrash" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  m.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{await restoreFromTrash([b.dataset.restore]);openTrash();});
+  m.querySelectorAll('[data-purge]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this forever? This cannot be undone.'))return;await purgeFromTrash([b.dataset.purge]);openTrash();});
+  const et=$('emptyTrash');if(et)et.onclick=async()=>{if(!confirm('Permanently delete everything in Trash? This cannot be undone.'))return;await purgeFromTrash(trash.map(e=>e.id));openTrash();};
+  $('closeTrash').onclick=()=>{$('overlay').classList.remove('open');render();};
+}
+window.__openTrash=openTrash;
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
@@ -1921,9 +1978,10 @@ function wireGoals(){
   $('view').querySelectorAll('[data-gadd]').forEach(b=>b.onclick=()=>{startSubGoal(b.dataset.gadd);});
   $('view').querySelectorAll('[data-gedit]').forEach(b=>b.onclick=()=>startEdit(b.dataset.gedit));
   $('view').querySelectorAll('[data-gdel]').forEach(b=>b.onclick=async()=>{const id=b.dataset.gdel;
-    const kids=entries.filter(e=>e.parent===id);
-    if(kids.length&&!confirm('This goal has sub-goals. Delete it and its sub-goals?'))return;
-    entries=entries.filter(e=>e.id!==id&&e.parent!==id);await saveEntries();renderSection();});
+    const kidIds=entries.filter(e=>e.parent===id).map(e=>e.id);
+    if(kidIds.length&&!confirm('This goal has sub-goals. Move it and its sub-goals to Trash?'))return;
+    const ids=[id,...kidIds];await softDelete(ids);renderSection();
+    showToast(kidIds.length?'Goal + sub-goals moved to Trash':'Moved to Trash','Undo',async()=>{await restoreFromTrash(ids);renderSection();});});
 }
 function startSubGoal(parentId){
   editingId=null;draft={title:'',text:'',tag:'',when:'',area:(entries.find(x=>x.id===parentId)||{}).area||areas[0].id,meta:{},parent:parentId};
@@ -2428,7 +2486,7 @@ async function add(){
   renderSection();await saveEntries();ensureThemes(()=>render());
 }
 async function toggle(id){const e=entries.find(x=>x.id===id);if(e){e.done=!e.done;render();await saveEntries();}}
-async function remove(id){entries=entries.filter(x=>x.id!==id);entries.forEach(e=>{if(e.links)e.links=e.links.filter(l=>l!==id);});render();await saveEntries();}
+async function remove(id){await softDelete([id]);render();showToast('Moved to Trash','Undo',async()=>{await restoreFromTrash([id]);render();});}
 async function changeType(id,to){const e=entries.find(x=>x.id===id);if(e){e.type=to;if(!TYPES[to].check)e.done=false;menuOpen=null;render();await saveEntries();}}
 async function changeArea(id,aid){const e=entries.find(x=>x.id===id);if(e){e.area=aid;menuOpen=null;render();await saveEntries();}}
 function gotoEntry(id){const e=entries.find(x=>x.id===id);if(!e)return;
