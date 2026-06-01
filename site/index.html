@@ -631,6 +631,16 @@
   #trashlist{max-height:50vh;overflow:auto;margin:10px 0}
   #micBtn.rec{background:#c0392b;animation:micpulse 1.2s infinite}
   @keyframes micpulse{0%{box-shadow:0 0 0 0 rgba(192,57,58,.5)}70%{box-shadow:0 0 0 12px rgba(192,57,58,0)}100%{box-shadow:0 0 0 0 rgba(192,57,58,0)}}
+  .ws-review{padding:36px 28px;max-width:680px;margin:0 auto;position:relative}
+  .ws-review-head{font-size:13px;color:var(--muted);margin-bottom:18px;text-align:center}
+  .ws-review-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px}
+  .ws-review-title{font-family:var(--serif);font-size:22px;color:var(--ink);margin-bottom:4px}
+  .ws-review-subj{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .ws-review-body{margin:8px 0 18px;min-height:36px}
+  .ws-review-acts{display:flex;gap:10px}
+  .ws-sr-again,.ws-sr-good{flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:14px;font-family:var(--sans)}
+  .ws-sr-again{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+  .ws-sr-good{background:var(--accent);color:#fff;border:1px solid var(--accent)}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -712,7 +722,7 @@ let curSource='field', graphColorBy='area', collapsedChapters={};
 let composerOpen=false, previewOn=false, optionsOpen=false, toolbarMin=false, editingId=null;
 let draft={title:'',text:'',tag:'',when:'',area:null};
 // workspace (knowledge mode)
-let wsActiveId=null, wsSidebar=true, wsSourceFilter=null, wsSearch='', wsSaveTimer=null, wsSaveState='', wsHistoryOpen=false, wsColTree={}, wsView='notes', wsFontScale=1, wsPreviewOn=false, wsGroupBy='subject', wsStudyFilter=null, wsCardsOpen=false, wsCardsBusy=false;
+let wsActiveId=null, wsSidebar=true, wsSourceFilter=null, wsSearch='', wsSaveTimer=null, wsSaveState='', wsHistoryOpen=false, wsColTree={}, wsView='notes', wsFontScale=1, wsPreviewOn=false, wsGroupBy='subject', wsStudyFilter=null, wsCardsOpen=false, wsCardsBusy=false, wsReviewReveal=false;
 let homeMode='dashboard'; // 'dashboard' | 'journal'
 let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day';
 let studySources=[], studyProposed=null;
@@ -2278,6 +2288,7 @@ function renderWorkspace(){
   if(!ready){ws.innerHTML='<div class="loading">Loading…</div>';return;}
   const notes=wsNotes();
   const counts={};SOURCE_ORDER.forEach(s=>counts[s]=entries.filter(e=>e.type==='knowledge'&&(e.source||'field')===s).length);
+  const srDueCount=entries.filter(e=>e.type==='knowledge'&&(!e.srDue||e.srDue<=todayISO())).length;
 
   // sidebar list — grouped by subject (default) or by source
   let listHTML='';
@@ -2323,6 +2334,7 @@ function renderWorkspace(){
     <div class="ws-viewtog">
       <button class="ws-vt ${wsView==='notes'?'on':''}" data-wsview="notes">Notes</button>
       <button class="ws-vt ${wsView==='graph'?'on':''}" data-wsview="graph">Graph</button>
+      <button class="ws-vt ${wsView==='review'?'on':''}" data-wsview="review">Review${srDueCount?' ('+srDueCount+')':''}</button>
     </div>
     <div class="ws-search"><input id="wsSearchIn" placeholder="Search notes…" value="${esc(wsSearch)}"></div>
     ${wsStudyFilter?`<div class="ws-studyfilter">Notes from <b>${esc((studySources.find(s=>s.id===wsStudyFilter)||{}).name||'source')}</b><button id="wsClearStudy">✕</button></div>`:''}
@@ -2333,6 +2345,7 @@ function renderWorkspace(){
 
   let mainInner;
   if(wsView==='graph')mainInner=`<div class="ws-graphwrap"><button class="ws-sidebtn" id="wsToggleSide" title="toggle sidebar">${wsSidebar?'⟨':'⟩'}</button><div class="ws-graph-head">Knowledge graph</div><div class="ws-graph-ctrl"><span style="font-size:12px;color:var(--muted)">Color by</span><button class="ws-vt ${graphColorBy==='area'?'on':''}" data-cb="area">Area</button><button class="ws-vt ${graphColorBy==='source'?'on':''}" data-cb="source">Source</button></div><div id="graphbox" style="width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)"></div></div>`;
+  else if(wsView==='review')mainInner=wsReviewHTML();
   else mainInner=wsActiveId?wsEditorHTML():wsEmptyHTML();
   const main=`<main class="ws-main">${mainInner}</main>`;
   ws.innerHTML=`<div class="ws-shell ${wsSidebar?'':'collapsed'}">${sidebar}${main}</div>`;
@@ -2351,6 +2364,32 @@ function wsEmptyHTML(){
     <button class="ws-sidebtn" id="wsToggleSide" title="toggle sidebar">${wsSidebar?'⟨':'⟩'}</button>
     <div class="ws-empty-in"><div class="ws-empty-mark">✎</div><p>Select a note from the left, or create a new one.</p>
     <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="add" id="wsNew2">＋ New note</button><button class="ws-cardadd" id="wsScanNew">⊞ Scan handwriting</button></div></div></div>`;
+}
+// ---- Spaced repetition ----
+const SR_INTERVALS=[1,3,7,16,40,90];
+function srDue(){return entries.filter(e=>e.type==='knowledge'&&(!e.srDue||e.srDue<=todayISO()));}
+function srReview(id,good){
+  const e=entries.find(x=>x.id===id);if(!e)return;
+  e.srLevel=good?Math.min((e.srLevel||0)+1,SR_INTERVALS.length-1):0;
+  const days=good?SR_INTERVALS[e.srLevel]:1;
+  e.srDue=new Date(Date.now()+days*864e5).toISOString().slice(0,10);
+  e.srReviewed=todayISO();e._mod=Date.now();
+  wsReviewReveal=false;saveEntries();renderWorkspace();
+}
+function wsReviewHTML(){
+  const sideBtn=`<button class="ws-sidebtn" id="wsToggleSide" title="toggle sidebar">${wsSidebar?'⟨':'⟩'}</button>`;
+  const due=srDue();
+  if(!due.length){const total=entries.filter(e=>e.type==='knowledge').length;return `<div class="ws-empty">${sideBtn}<div class="ws-empty-in"><div class="ws-empty-mark">✓</div><p>${total?'All caught up — nothing due to review right now.':'No knowledge notes yet to review.'}</p></div></div>`;}
+  const e=due[0];
+  const body=wsReviewReveal?`<div class="md">${mdRender(e.text||'(empty note)')}</div>`:`<button class="add" id="wsReveal">Show note</button>`;
+  return `<div class="ws-review">${sideBtn}
+    <div class="ws-review-head">Review · ${due.length} due</div>
+    <div class="ws-review-card">
+      <div class="ws-review-title">${esc(e.title||(e.text||'').slice(0,60)||'Untitled')}</div>
+      ${(e.subject||e.subcat)?`<div class="ws-review-subj">${esc((e.subject||'')+(e.subcat?(' · '+e.subcat):''))}</div>`:''}
+      <div class="ws-review-body">${body}</div>
+      ${wsReviewReveal?`<div class="ws-review-acts"><button id="srAgain" class="ws-sr-again">Again</button><button id="srGood" class="ws-sr-good">Got it ✓</button></div>`:''}
+    </div></div>`;
 }
 function wsEditorHTML(){
   const e=entries.find(x=>x.id===wsActiveId);if(!e)return wsEmptyHTML();
@@ -2446,7 +2485,10 @@ function wireWorkspace(){
   if($('wsClearStudy'))$('wsClearStudy').onclick=()=>{wsStudyFilter=null;renderWorkspace();};
   if($('wsToggleSide'))$('wsToggleSide').onclick=()=>{wsSidebar=!wsSidebar;renderWorkspace();};
   if($('wsSearchIn'))$('wsSearchIn').oninput=e=>{wsSearch=e.target.value;const p=e.target.selectionStart;renderWorkspace();const n=$('wsSearchIn');if(n){n.focus();n.setSelectionRange(p,p);}};
-  ws.querySelectorAll('[data-wsview]').forEach(b=>b.onclick=()=>{flushWsSave();wsView=b.dataset.wsview;renderWorkspace();});
+  ws.querySelectorAll('[data-wsview]').forEach(b=>b.onclick=()=>{flushWsSave();wsView=b.dataset.wsview;wsReviewReveal=false;renderWorkspace();});
+  if($('wsReveal'))$('wsReveal').onclick=()=>{wsReviewReveal=true;renderWorkspace();};
+  if($('srAgain'))$('srAgain').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,false);};
+  if($('srGood'))$('srGood').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,true);};
   ws.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>{graphColorBy=b.dataset.cb;renderWorkspace();});
   ws.querySelectorAll('[data-gb]').forEach(b=>b.onclick=()=>{wsGroupBy=b.dataset.gb;renderWorkspace();});
   ws.querySelectorAll('.ws-chaptoggle,.ws-subjhead,.ws-subcathead').forEach(b=>b.onclick=()=>{wsColTree[b.dataset.col]=!wsColTree[b.dataset.col];renderWorkspace();});
