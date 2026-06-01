@@ -195,8 +195,9 @@
   .onthisday{background:var(--accent-soft);border-radius:var(--radius);padding:16px 18px;margin:22px 0}
   .onthisday .od{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:8px}
   .onthisday .oq{font-family:var(--serif);font-style:italic;font-size:16.5px;line-height:1.55;color:#2c3a2e}
-  .daily-quote{text-align:center;margin:14px auto 22px;max-width:580px;padding:6px 10px}
-  .daily-quote .dq-text{font-family:var(--serif);font-size:23px;line-height:1.5;color:var(--ink)}
+  .daily-quote{text-align:center;margin:26px auto 28px;max-width:600px;padding:0 10px;position:relative}
+  .daily-quote::before{content:'\201C';display:block;font-family:var(--serif);font-size:46px;line-height:.4;color:var(--faint);margin-bottom:8px}
+  .daily-quote .dq-text{font-family:var(--serif);font-size:25px;line-height:1.5;color:var(--ink)}
   .daily-quote .dq-text p{margin:0}
   .home-status{text-align:center;font-size:13.5px;color:var(--muted);margin:0 0 26px}
   .entry .acts .feat{color:var(--faint)}
@@ -649,6 +650,8 @@
   .wel-trend-dots .wel-dot{width:7px;height:7px}
   .ti-imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
   .ti-imgs img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer}
+  @keyframes viewfade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .viewfade{animation:viewfade .22s ease}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1605,7 +1608,7 @@ function renderHome(){
   const greet=hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
   const openT=entries.filter(e=>e.type==='tasks'&&!e.done).length;
   const ahead=entries.filter(e=>!e.done&&isFuture(e.when)).length;
-  const sub=`${openT?`${openT} open task${openT>1?'s':''}`:'No open tasks'}${ahead?`, and ${ahead} thing${ahead>1?'s':''} wait ahead`:''}.`;
+  const sub=`${openT?`${openT} open task${openT>1?'s':''}`:'No open tasks'}${ahead?`, and ${ahead} thing${ahead>1?'s':''} ahead`:''}.`;
 
   // on this day
   const now=new Date();const md=`${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
@@ -1629,11 +1632,11 @@ function renderHome(){
     return `<div class="home-row"><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span>${e.when?`<span class="rwhen ${fut?'future':''}">${relTime(e.when)}</span>`:''}</div>`;
   }).join(''):'<div class="none">Nothing pressing.</div>';
 
-  const ref=entries.filter(e=>e.type==='reflections').sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created))[0];
+  const dq=dailyQuote();
+  const ref=entries.filter(e=>e.type==='reflections'&&!(dq&&e.id===dq.id)).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created))[0];
 
   const toggle=`<div class="home-toggle"><button class="${homeMode==='dashboard'?'on':''}" data-hm="dashboard">Dashboard</button><button class="${homeMode==='journal'?'on':''}" data-hm="journal">Journal</button></div>`;
 
-  const dq=dailyQuote();
   const quoteEl=dq?`<div class="daily-quote"><div class="dq-text">${mdRender(dq.text)}</div></div>`:'';
 
   if(homeMode==='journal'){
@@ -2766,6 +2769,7 @@ function render(){
   if(inWorkspace){renderWorkspace();return;}
   renderNav();
   if(!ready){$('view').innerHTML='<div class="loading">Loading your repository…</div>';return;}
+  const _v=$('view'); if(_v){_v.classList.remove('viewfade');void _v.offsetWidth;_v.classList.add('viewfade');}
   if(current==='home')renderHome();
   else if(current==='logs')renderLogs();
   else if(current==='study')renderStudy();
