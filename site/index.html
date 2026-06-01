@@ -1024,7 +1024,7 @@ window.__openFeedback=openFeedback;
 async function sortTasks(text){
   const areaList=areas.map(a=>`"${a.id}" (${a.name})`).join(', ');
   const existing=allTags().slice(0,80);
-  const out=await askAnthropic(`Turn this brain-dump into a clean list of individual to-do tasks. Split distinct tasks apart and reword each into a short imperative phrase. For each task choose an area id from: ${areaList}. Suggest 0-2 lowercase tags, STRONGLY preferring tags already in use (treat near-synonyms as the same): ${existing.join(', ')||'(none yet)'}. If a task is clearly a recurring household chore, set "every" to a sensible number of days (e.g. dishes 1, vacuum 7, laundry 7, change sheets 14, water plants 4); otherwise omit "every". Reply ONLY as a JSON array, no other text: [{"text":"Wash the dishes","area":"life","tags":["household"],"every":1}]\n\nBRAIN-DUMP:\n"""${text.slice(0,3000)}"""`,900);
+  const out=await askAnthropic(`Turn this brain-dump into a clean list of individual to-do tasks. Split distinct tasks apart and reword each into a short imperative phrase. For each task choose an area id from: ${areaList}. Suggest 0-2 lowercase tags, STRONGLY preferring tags already in use (treat near-synonyms as the same): ${existing.join(', ')||'(none yet)'}. If a task is clearly a recurring household chore, set "every" to a sensible number of days (e.g. dishes 1, vacuum 7, laundry 7, change sheets 14, water plants 4); otherwise omit "every". If urgency is clear (deadlines, time-sensitive wording like "urgent"/"ASAP"/"today"), set "priority" to "high", "med", or "low"; otherwise omit it. Reply ONLY as a JSON array, no other text: [{"text":"Wash the dishes","area":"life","tags":["household"],"every":1,"priority":"low"}]\n\nBRAIN-DUMP:\n"""${text.slice(0,3000)}"""`,900);
   let t=(out||'').replace(/```json|```/g,'').trim();const arr=JSON.parse(t);return Array.isArray(arr)?arr:[];
 }
 function openTaskDump(){
@@ -1041,12 +1041,12 @@ function openTaskDump(){
     const o=$('tdOut');o.innerHTML='<span style="color:var(--muted)">Sorting…</span>';
     try{parsed=await sortTasks(text);}catch(e){o.innerHTML='<span style="color:#c0392b">Could not sort — check your connection and try again.</span>';return;}
     if(!parsed.length){o.innerHTML='<div class="msub">No tasks found in that.</div>';return;}
-    o.innerHTML=`<div style="max-height:36vh;overflow:auto">${parsed.map((p,i)=>{const a=areaById(p.area)||areas[0];return `<label style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer"><input type="checkbox" data-tdi="${i}" checked style="margin-top:3px;flex:none"><span style="flex:1;font-size:13px;color:var(--ink)">${esc(p.text||'')}<div style="font-size:11px;color:var(--muted);margin-top:2px"><span style="color:${a.color}">${esc(a.name)}</span>${(p.tags||[]).map(t=>' #'+esc(t)).join('')}${p.every?` · 🔁 every ${+p.every}d`:''}</div></span></label>`;}).join('')}</div>
+    o.innerHTML=`<div style="max-height:36vh;overflow:auto">${parsed.map((p,i)=>{const a=areaById(p.area)||areas[0];return `<label style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer"><input type="checkbox" data-tdi="${i}" checked style="margin-top:3px;flex:none"><span style="flex:1;font-size:13px;color:var(--ink)">${esc(p.text||'')}<div style="font-size:11px;color:var(--muted);margin-top:2px"><span style="color:${a.color}">${esc(a.name)}</span>${(p.tags||[]).map(t=>' #'+esc(t)).join('')}${p.priority?` · ⚑ ${esc(p.priority)}`:''}${p.every?` · 🔁 every ${+p.every}d`:''}</div></span></label>`;}).join('')}</div>
       <button id="tdAdd" class="prim" style="width:100%;padding:10px;margin-top:10px">Add selected tasks</button>`;
     $('tdAdd').onclick=async()=>{
       const picks=[...o.querySelectorAll('[data-tdi]')].filter(c=>c.checked).map(c=>parsed[+c.dataset.tdi]).filter(Boolean);
       if(!picks.length)return;
-      picks.forEach(p=>{const aid=areaById(p.area)?p.area:areas[0].id;const ne={id:uid(),type:'tasks',area:aid,title:null,text:(p.text||'').toString(),source:null,meta:null,tags:[...new Set((p.tags||[]).map(x=>String(x).toLowerCase().trim()).filter(Boolean))],when:todayISO(),imgs:[],gps:null,links:[],done:false,created:new Date().toISOString(),_mod:Date.now()};if(p.every&&+p.every>0){ne.every=+p.every;ne.lastDone=null;}entries.push(ne);});
+      picks.forEach(p=>{const aid=areaById(p.area)?p.area:areas[0].id;const ne={id:uid(),type:'tasks',area:aid,title:null,text:(p.text||'').toString(),source:null,meta:null,tags:[...new Set((p.tags||[]).map(x=>String(x).toLowerCase().trim()).filter(Boolean))],when:todayISO(),imgs:[],gps:null,links:[],done:false,created:new Date().toISOString(),_mod:Date.now()};if(p.every&&+p.every>0){ne.every=+p.every;ne.lastDone=null;}if(p.priority&&['high','med','low'].includes(p.priority))ne.priority=p.priority;entries.push(ne);});
       await saveEntries();$('overlay').classList.remove('open');current='tasks';areaFilter=null;pursuitsActive=false;render();showToast(picks.length+' task'+(picks.length>1?'s':'')+' added','',null);
     };
   };
@@ -1558,9 +1558,10 @@ function composerHTML(){
     <div class="opt-h">Options<button class="opt-x" id="optClose">✕</button></div>
     ${sourcePanel}
     ${current==='goals'?`<label class="opt-l">Goal type</label><label class="opt-check"><input type="checkbox" id="goalHabit" ${draft.habit?'checked':''}> Daily habit (track streak)</label>${draft.parent?`<div class="opt-parent">↳ sub-goal of: ${esc((entries.find(x=>x.id===draft.parent)||{}).text||'')}</div>`:''}`:''}
+    ${current==='tasks'?`<label class="opt-l">Priority</label><select id="taskPriority"><option value="" ${!draft.priority?'selected':''}>None</option><option value="high" ${draft.priority==='high'?'selected':''}>High</option><option value="med" ${draft.priority==='med'?'selected':''}>Medium</option><option value="low" ${draft.priority==='low'?'selected':''}>Low</option></select>`:''}
     ${current==='tasks'?`<label class="opt-l">Repeat</label><label class="opt-check"><input type="checkbox" id="taskRepeat" ${draft.every?'checked':''}> Recurring — every <input type="number" id="taskEvery" min="1" value="${draft.every||7}" style="width:52px;margin:0 4px;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;color:var(--ink)"> days</label>`:''}
     <label class="opt-l">Area</label><select id="area">${areaOpts}</select>
-    <label class="opt-l">Date</label><input type="date" id="when" value="${esc(draft.when||'')}">
+    <label class="opt-l">${current==='tasks'?'Due date':'Date'}</label><input type="date" id="when" value="${esc(draft.when||'')}">
     <label class="opt-l">Tags</label><input type="text" class="tagin" id="tag" placeholder="comma separated" value="${esc(draft.tag||'')}" style="width:100%">
     <div class="opt-acts">
       <button class="iconbtn" id="imgBtn" title="add image"><svg viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
@@ -1671,9 +1672,13 @@ function entryHTML(e){
   const featBadge=(e.type==='reflections'&&e.featured)?`<span class="feat-badge" title="featured as a daily quote">★ featured</span>`:'';
   let recurEl='';
   if(e.type==='tasks'&&e.every){const d=recurDueDays(e);const lab=d>0?`every ${e.every}d`:(d===0?'due today':`overdue ${-d}d`);recurEl=`<span class="when" title="recurring every ${e.every} day${e.every>1?'s':''}" style="${d<=0?'color:#c0392b;font-weight:600':''}">🔁 ${lab}</span>`;}
+  let prioEl='';
+  if(e.type==='tasks'&&e.priority){const PM={high:['High','#c0392b'],med:['Med','#c47f17'],low:['Low','#3a7ca5']}[e.priority];if(PM)prioEl=`<span class="when" title="${PM[0]} priority" style="color:${PM[1]};font-weight:600">⚑ ${PM[0]}</span>`;}
+  let dueEl='';
+  if(e.type==='tasks'&&!e.every&&e.when){const od=!e.done&&e.when<todayISO();dueEl=`<span class="when ${isFuture(e.when)?'future':''}" style="${od?'color:#c0392b;font-weight:600':''}">${od?'overdue · ':'due '}${relTime(e.when)}</span>`;}
   return `<div class="entry ${cls} ${e.featured?'is-featured':''}">${check}${aline}
     <div class="body">${titleEl}${srcEl}${textEl}${imgs}${linksEl}
-    <div class="foot">${featBadge}${apill}${tags}${recurEl}${when}</div></div>
+    <div class="foot">${featBadge}${prioEl}${apill}${tags}${recurEl}${e.type==='tasks'?dueEl:when}</div></div>
     <div class="acts">${featBtn}<button class="edit" data-edit="${e.id}" title="edit">✎</button><button class="mv" data-mv="${e.id}" title="move / reassign">⇄</button><button class="del" data-del="${e.id}" title="delete">✕</button></div>
     <div class="menu ${menuOpen===e.id?'open':''}" id="mm-${e.id}">
       <div class="mhead">Change type</div>${moveTypes}
@@ -2273,7 +2278,8 @@ function renderSection(){
     return (e.text+' '+(e.title||'')+' '+(e.tags||[]).join(' ')+' '+Object.values(e.meta||{}).join(' ')+' '+flags).toLowerCase().includes(q);
   });}
 
-  if(current==='tasks'||current==='goals')items.sort((a,b)=>(a.done-b.done)||((a.when||'9999')<(b.when||'9999')?-1:1));
+  if(current==='tasks'){const prio=e=>({high:3,med:2,low:1}[e.priority]||0);items.sort((a,b)=>(a.done-b.done)||(prio(b)-prio(a))||((a.when||'9999')<(b.when||'9999')?-1:1));}
+  else if(current==='goals')items.sort((a,b)=>(a.done-b.done)||((a.when||'9999')<(b.when||'9999')?-1:1));
   else items.sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created));
 
   const filters=tagPool.length?`<div class="filters">${tagPool.slice(0,12).map(t=>`<button class="${t===activeTag?'on':''}" data-t="${esc(t)}">#${esc(t)}</button>`).join('')}${activeTag?`<button data-t="">clear</button>`:''}</div>`:'<div class="filters"></div>';
@@ -2393,6 +2399,7 @@ function wireSection(){
   if($('goalHabit'))$('goalHabit').addEventListener('change',e=>{draft.habit=e.target.checked;});
   const _syncRepeat=()=>{const on=$('taskRepeat')&&$('taskRepeat').checked;const n=Math.max(1,parseInt(($('taskEvery')||{}).value,10)||7);draft.every=on?n:0;};
   if($('taskRepeat'))$('taskRepeat').addEventListener('change',_syncRepeat);
+  if($('taskPriority'))$('taskPriority').addEventListener('change',e=>{draft.priority=e.target.value;});
   if($('taskEvery'))$('taskEvery').addEventListener('input',_syncRepeat);
   if($('area'))$('area').addEventListener('change',e=>{draft.area=e.target.value;});
   $('view').querySelectorAll('.srcfield').forEach(el=>el.addEventListener('input',()=>{draft.meta=draft.meta||{};const k=el.id.replace('sf-','');draft.meta[k]=el.value;}));
@@ -2433,7 +2440,7 @@ function startNew(){editingId=null;draft={title:'',text:'',tag:'',when:todayISO(
 function startEdit(id){const e=entries.find(x=>x.id===id);if(!e)return;editingId=id;
   if(e.type!==current){current=e.type;}
   if(e.type==='knowledge')curSource=e.source||'field';
-  draft={title:e.title||'',text:e.text||'',tag:(e.tags||[]).join(', '),when:e.when||'',area:e.area,meta:Object.assign({},e.meta||{}),habit:!!e.habit,parent:e.parent||null,every:e.every||0};
+  draft={title:e.title||'',text:e.text||'',tag:(e.tags||[]).join(', '),when:e.when||'',area:e.area,meta:Object.assign({},e.meta||{}),habit:!!e.habit,parent:e.parent||null,every:e.every||0,priority:e.priority||''};
   composerOpen=true;optionsOpen=false;previewOn=false;pendingImgs=(e.imgs||[]).slice();pendingLinks=(e.links||[]).slice();suggestedTags=[];
   render();
   setTimeout(()=>{const c=document.querySelector('.composer-wrap');if(c)c.scrollIntoView({behavior:'smooth',block:'center'});const i=$('input');if(i)i.focus();},40);
@@ -2893,12 +2900,14 @@ async function add(){
   const areaVal=($('area')||{}).value||draft.area||areas[0].id;
   const isHabit=current==='goals'&&$('goalHabit')&&$('goalHabit').checked;
   const repEvery=(current==='tasks'&&$('taskRepeat')&&$('taskRepeat').checked)?Math.max(1,parseInt(($('taskEvery')||{}).value,10)||7):0;
+  const taskPrio=(current==='tasks'&&$('taskPriority'))?($('taskPriority').value||''):'';
   if(editingId){
     const e=entries.find(x=>x.id===editingId);
     if(e){e.type=current;e.area=areaVal;e.title=title||null;e.text=text;e.source=source;e.meta=meta;
       e.tags=[...new Set(manualTags)];e.when=(($('when')||{}).value||null);e.imgs=pendingImgs.slice();e.links=pendingLinks.slice();
       if(current==='goals'){e.habit=isHabit;if(isHabit&&!e.habitLog)e.habitLog=[];}
       if(current==='tasks'&&repEvery>0){e.every=repEvery;if(!('lastDone' in e))e.lastDone=null;}else if(current==='tasks'){delete e.every;delete e.lastDone;}
+      if(current==='tasks')e.priority=taskPrio||null;
       e.theme=null;e._mod=Date.now();}
     closeComposer();renderSection();await saveEntries();ensureThemes(()=>render());return;
   }
@@ -2907,6 +2916,7 @@ async function add(){
     gps:pendingGps||null,links:pendingLinks.slice(),done:false,created:new Date().toISOString(),_mod:Date.now()};
   if(current==='goals'){if(draft.parent)ne.parent=draft.parent;if(isHabit){ne.habit=true;ne.habitLog=[];}}
   if(current==='tasks'&&repEvery>0){ne.every=repEvery;ne.lastDone=null;}
+  if(current==='tasks'&&taskPrio)ne.priority=taskPrio;
   entries.push(ne);
   closeComposer();
   renderSection();await saveEntries();ensureThemes(()=>render());
