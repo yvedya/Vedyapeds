@@ -653,9 +653,11 @@
     <div id="authMsg" style="margin-top:14px;font-size:13px;color:#8a8780;min-height:18px;text-align:center;"></div>
   </div>
 </div>
-<div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;">
+<div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 24px);">
   <button id="themeBtn" onclick="window.__toggleTheme&&window.__toggleTheme()" title="Toggle dark mode" style="padding:6px 10px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;">☾</button>
   <button id="askBtn" onclick="window.__openAI&&window.__openAI()" title="Ask your repository / weekly review" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">✦ Ask</button>
+  <button id="searchBtn" onclick="window.__openSearch&&window.__openSearch()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">🔍 Search</button>
+  <button id="tplBtn" onclick="window.__openTemplates&&window.__openTemplates()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">📋 Template</button>
   <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
   <button id="exportBtn" onclick="window.__openBackup&&window.__openBackup()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Backup</button>
   <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
@@ -918,6 +920,49 @@ function openAImodal(){
   $('aiClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openAI=openAImodal;
+// ---- Global search across everything ----
+function openSearch(){
+  const m=$('modal');
+  m.innerHTML=`<h3>Search everything</h3><div class="msub">Find any note, task, log, memory, reflection, or knowledge entry.</div>
+    <input id="gsQ" type="text" placeholder="Type to search…" style="width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none;margin:10px 0">
+    <div id="gsOut" style="max-height:48vh;overflow:auto"></div>
+    <div class="mfoot"><button id="gsClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const out=$('gsOut'),inp=$('gsQ');
+  const run=()=>{
+    const q=inp.value.trim().toLowerCase(); if(!q){out.innerHTML='';return;}
+    const res=entries.filter(e=>(((e.title||'')+' '+(e.text||'')+' '+((e.tags||[]).join(' ')))+'').toLowerCase().includes(q)).slice(0,60);
+    if(!res.length){out.innerHTML='<div class="msub">No matches.</div>';return;}
+    out.innerHTML=res.map(e=>{const t=(TYPES[e.type]&&TYPES[e.type].label)||e.type;const txt=esc((((e.title?e.title+': ':'')+(e.text||''))+'').replace(/\s+/g,' ').slice(0,90));return `<button data-go="${e.id}" style="display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);background:none;padding:9px 4px;cursor:pointer;color:var(--ink);font-size:13px"><span style="color:var(--muted);font-size:11px">${t}</span><br>${txt||'(untitled)'}</button>`;}).join('');
+    out.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{$('overlay').classList.remove('open');gotoEntry(b.dataset.go);});
+  };
+  inp.addEventListener('input',run); $('gsClose').onclick=()=>$('overlay').classList.remove('open');
+  setTimeout(()=>inp.focus(),30);
+}
+window.__openSearch=openSearch;
+// ---- Note templates (start a Knowledge note with structure) ----
+const TEMPLATES={
+  drug:{label:'Drug',md:'# Drug name\n\n**Class:** \n\n**Mechanism:** \n\n**Dose:** \n\n**Indications:** \n\n**Contraindications / cautions:** \n\n**Side effects:** \n\n**Monitoring:** \n\n**Pearls:** \n'},
+  condition:{label:'Condition / disease',md:'# Condition\n\n**Definition:** \n\n**Presentation:** \n\n**Workup / diagnosis:** \n\n**Management:** \n\n**Complications:** \n\n**Pearls:** \n'},
+  article:{label:'Article summary',md:'# Title\n\n**Authors / journal / year:** \n\n**Question:** \n\n**Methods:** \n\n**Key findings:** \n\n**Takeaway:** \n'},
+  procedure:{label:'Procedure',md:'# Procedure\n\n**Indications:** \n\n**Contraindications:** \n\n**Equipment:** \n\n**Steps:**\n1. \n\n**Complications:** \n'}
+};
+function openTemplates(){
+  const m=$('modal');
+  m.innerHTML=`<h3>New note from template</h3><div class="msub">Start a Knowledge note with a ready-made clinical structure.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:12px 0">${Object.keys(TEMPLATES).map(k=>`<button data-tpl="${k}" style="text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:11px 12px;cursor:pointer;color:var(--ink);font-size:14px">${TEMPLATES[k].label}</button>`).join('')}</div>
+    <div class="mfoot"><button id="tplClose" class="prim">Cancel</button></div>`;
+  $('overlay').classList.add('open');
+  m.querySelectorAll('[data-tpl]').forEach(b=>b.onclick=async()=>{
+    const tpl=TEMPLATES[b.dataset.tpl];
+    const ne={id:uid(),type:'knowledge',area:(areas[0]||{}).id,title:null,text:tpl.md,source:'field',meta:{},tags:[],when:todayISO(),imgs:[],links:[],done:false,created:new Date().toISOString(),_mod:Date.now()};
+    entries.push(ne); await saveEntries();
+    $('overlay').classList.remove('open');
+    gotoEntry(ne.id); // opens it in the Knowledge workspace via the existing path
+  });
+  $('tplClose').onclick=()=>$('overlay').classList.remove('open');
+}
+window.__openTemplates=openTemplates;
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
