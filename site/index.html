@@ -2060,6 +2060,17 @@ async function detectStudyProgress(text){
   }catch(e){console.warn('study detect failed',e);return null;}
 }
 
+// Which calendar day an entry belongs to in the Log (null = it shouldn't appear).
+// The Log is a RECORD of what happened: unfinished to-do tasks are hidden; a completed
+// task surfaces automatically on the day it was completed.
+function logDate(e){
+  if(e.type==='tasks'){
+    if(e.every)return e.lastDone||null;                    // recurring chore: the day it was last done
+    if(!e.done)return null;                                // unfinished to-do: never shows in the log
+    return e.doneAt||e.when||(e.created||'').slice(0,10);  // completed: the day it was completed
+  }
+  return e.when||(e.created||'').slice(0,10);
+}
 function renderLogs(){
   const viewToggle=`<div class="log-viewtog"><button class="${logView==='day'?'on':''}" data-logview="day">Day</button><button class="${logView==='timeline'?'on':''}" data-logview="timeline">Timeline</button></div>`;
   if(logView==='timeline'){
@@ -2071,9 +2082,8 @@ function renderLogs(){
   const targetISO=`${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}-${String(target.getDate()).padStart(2,'0')}`;
   const dayLabel=logDayOffset===0?'Today':logDayOffset===-1?'Yesterday':target.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
 
-  // entries logged for this day (use `when` if set, else created date)
-  const dayKey=e=>{const d=e.when||(e.created||'').slice(0,10);return d;};
-  const dayEntries=entries.filter(e=>dayKey(e)===targetISO).sort((a,b)=>(b.created||'').localeCompare(a.created||''));
+  // entries that belong to this day (completed tasks count; unfinished to-dos are hidden — see logDate)
+  const dayEntries=entries.filter(e=>logDate(e)===targetISO).sort((a,b)=>(b.created||'').localeCompare(a.created||''));
 
   // composer / review
   let composer;
@@ -2224,17 +2234,17 @@ async function transcribeHandwriting(dataUrl){
 }
 
 function renderTimelineInner(viewToggle){
-  let dated=entries.filter(e=>e.when);
-  if(areaFilter)dated=dated.filter(e=>e.area===areaFilter);
-  dated.sort((a,b)=>b.when.localeCompare(a.when));
+  let dated=entries.map(e=>({e,d:logDate(e)})).filter(x=>x.d);
+  if(areaFilter)dated=dated.filter(x=>x.e.area===areaFilter);
+  dated.sort((a,b)=>b.d.localeCompare(a.d));
   let html=(viewToggle||'')+areaStripHTML();
   if(!dated.length){html+=`<div class="empty"><div class="mark">⟡</div><p>No dated entries${areaFilter?' in this area':''} yet.</p></div>`;$('view').innerHTML=html;wireAreaStrip();$('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});return;}
   let lastMonth='';
-  dated.forEach(e=>{const d=new Date(e.when+'T00:00:00');const m=d.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  dated.forEach(x=>{const e=x.e;const d=new Date(x.d+'T00:00:00');const m=d.toLocaleDateString('en-US',{month:'long',year:'numeric'});
     if(m!==lastMonth){html+=`<div class="tl-month">${m}</div>`;lastMonth=m;}
-    const a=areaById(e.area);const fut=isFuture(e.when);
+    const a=areaById(e.area);const fut=isFuture(x.d);
     html+=`<div class="tl-item ${fut?'future':''}" data-tl="${e.id}"><div class="rail"><div class="node" ${a?`style="border-color:${a.color}"`:''}></div></div>
-      <div class="ti-card"><div class="ti-when">${relTime(e.when)}</div>
+      <div class="ti-card"><div class="ti-when">${relTime(x.d)}</div>
       <div class="ti-text">${esc(e.title||e.text)}<span class="ti-sec">${TYPES[e.type].label}${a?' · '+esc(a.name):''}</span></div>${(e.imgs&&e.imgs.length)?`<div class="ti-imgs">${e.imgs.slice(0,4).map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:''}</div></div>`;
   });
   $('view').innerHTML=html;wireAreaStrip();
@@ -2915,7 +2925,7 @@ async function toggle(id){const e=entries.find(x=>x.id===id);if(!e)return;
     e.lastDone=todayISO();e.done=false;e._mod=Date.now();render();await saveEntries();
     showToast('Done — next due in '+e.every+' day'+(e.every>1?'s':''),'',null);return;
   }
-  e.done=!e.done;e._mod=Date.now();render();await saveEntries();}
+  e.done=!e.done;if(e.type==='tasks')e.doneAt=e.done?todayISO():null;e._mod=Date.now();render();await saveEntries();}
 async function remove(id){await softDelete([id]);render();showToast('Moved to Trash','Undo',async()=>{await restoreFromTrash([id]);render();});}
 async function changeType(id,to){const e=entries.find(x=>x.id===id);if(e){e.type=to;if(!TYPES[to].check)e.done=false;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
 async function changeArea(id,aid){const e=entries.find(x=>x.id===id);if(e){e.area=aid;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
