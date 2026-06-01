@@ -655,6 +655,7 @@
 </div>
 <div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;">
   <button id="themeBtn" onclick="window.__toggleTheme&&window.__toggleTheme()" title="Toggle dark mode" style="padding:6px 10px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;">☾</button>
+  <button id="askBtn" onclick="window.__openAI&&window.__openAI()" title="Ask your repository / weekly review" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">✦ Ask</button>
   <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
   <button id="exportBtn" onclick="window.__openBackup&&window.__openBackup()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Backup</button>
   <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
@@ -870,6 +871,53 @@ function openBackupModal(){
   $('bkClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openBackup=openBackupModal;
+// ---- AI: ask-anything across your data + weekly review (via the secure proxy) ----
+async function askAnthropic(content,max_tokens){
+  const res=await fetch('/.netlify/functions/anthropic',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:max_tokens||800,messages:[{role:'user',content}]})});
+  const data=await res.json();
+  return (data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim();
+}
+function dataForAI(){
+  const ar=id=>(areaById(id)||{}).name||'';
+  const lines=entries.slice().sort((a,b)=>(((b.when||b.created||'')+'').localeCompare((a.when||a.created||'')+''))).map(e=>{
+    const when=e.when||((e.created||'')+'').slice(0,10);
+    const t=(TYPES[e.type]&&TYPES[e.type].label)||e.type;
+    const body=(((e.title?e.title+': ':'')+(e.text||''))+'').replace(/\s+/g,' ').slice(0,400);
+    const tags=(e.tags||[]).map(x=>'#'+x).join(' ');
+    return `- [${t}/${ar(e.area)}${when?' '+when:''}] ${body} ${tags}`.trim();
+  });
+  let out=lines.join('\n'); if(out.length>40000)out=out.slice(0,40000)+'\n…(older entries truncated)'; return out;
+}
+function recentForAI(days){
+  const cutoff=new Date(Date.now()-(days||7)*864e5).toISOString().slice(0,10);
+  const ar=id=>(areaById(id)||{}).name||'';
+  const lines=[];
+  entries.filter(e=>(e.when||((e.created||'')+'').slice(0,10))>=cutoff).forEach(e=>{const t=(TYPES[e.type]&&TYPES[e.type].label)||e.type;lines.push(`- [${t}/${ar(e.area)}] ${(((e.title?e.title+': ':'')+(e.text||''))+'').replace(/\s+/g,' ').slice(0,300)}`);});
+  Object.keys(wellnessLog||{}).filter(d=>d>=cutoff).sort().forEach(d=>{lines.push(`- [wellness ${d}] ${JSON.stringify(wellnessLog[d])}`);});
+  (studySources||[]).forEach(s=>lines.push(`- [study] ${s.name}: ${s.progress||0}${s.total?('/'+s.total):''} ${s.unit||''}`));
+  return lines.join('\n').slice(0,30000);
+}
+async function aiAsk(q){
+  return askAnthropic(`You answer questions about the user's personal repository (notes, tasks, logs, study, wellness, knowledge). Answer ONLY from the data below; if it isn't there, say you don't see it. Be concise and refer to specific entries when useful.\n\n=== DATA ===\n${dataForAI()}\n\n=== QUESTION ===\n${q}`,800);
+}
+async function aiReview(){
+  return askAnthropic(`This is a pediatric critical care physician's personal tracking data for roughly the past week (notes, tasks, logs, wellness check-ins for fitness/diet/sleep, study progress). Give a warm, concise review: surface patterns, wins, and gentle observations (e.g. sleep dips on busy days, study consistency, recurring themes). A few short paragraphs or bullets.\n\n=== PAST WEEK ===\n${recentForAI(7)}`,700);
+}
+function openAImodal(){
+  const m=$('modal');
+  m.innerHTML=`<h3>Ask your repository</h3><div class="msub">Ask across everything you've saved, or get a review of your week. (Uses AI — needs a connection.)</div>
+    <div style="display:flex;gap:8px;margin:12px 0"><input id="aiQ" type="text" placeholder="e.g. what did I note about DKA potassium?" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none"><button id="aiAskBtn" class="prim" style="padding:9px 16px">Ask</button></div>
+    <div id="aiOut" style="display:none;font-size:14px;line-height:1.55;color:var(--ink);background:var(--bg);border-radius:10px;padding:12px 14px;max-height:42vh;overflow:auto"></div>
+    <div class="mfoot"><button id="aiReviewBtn" style="margin-right:auto;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)">✦ Review my week</button><button id="aiClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const out=$('aiOut');
+  const run=async(fn,label)=>{out.style.display='block';out.innerHTML='<span style="color:var(--muted)">'+label+'</span>';try{const a=await fn();out.innerHTML=mdRender(a||'(no answer)');}catch(e){out.innerHTML='<span style="color:#c0392b">Could not reach the AI — check your connection.</span>';}};
+  $('aiAskBtn').onclick=()=>{const q=$('aiQ').value.trim();if(!q)return;run(()=>aiAsk(q),'Thinking…');};
+  $('aiQ').addEventListener('keydown',e=>{if(e.key==='Enter')$('aiAskBtn').click();});
+  $('aiReviewBtn').onclick=()=>run(aiReview,'Reviewing your week…');
+  $('aiClose').onclick=()=>$('overlay').classList.remove('open');
+}
+window.__openAI=openAImodal;
 
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
