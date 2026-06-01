@@ -641,6 +641,12 @@
   .ws-sr-again,.ws-sr-good{flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:14px;font-family:var(--sans)}
   .ws-sr-again{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
   .ws-sr-good{background:var(--accent);color:#fff;border:1px solid var(--accent)}
+  .wel-trends{margin-top:18px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+  .wel-trend-block{margin-top:12px}
+  .wel-trend-h{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .wel-trend-svg{width:100%;height:66px;display:block}
+  .wel-trend-dots{display:flex;gap:2px;flex-wrap:wrap}
+  .wel-trend-dots .wel-dot{width:7px;height:7px}
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1703,6 +1709,23 @@ function renderPursuits(){
   renderNav();
 }
 
+function wellnessTrends(target){
+  const sleepColor=(WELLNESS_TRACKS.find(t=>t.id==='sleep')||{}).color||'#378ADD';
+  const days=[];
+  for(let i=29;i>=0;i--){const d=new Date(target);d.setDate(d.getDate()-i);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;days.push(wellnessLog[k]||{});}
+  const sleeps=days.map(x=>+x.sleep||0);
+  const maxS=Math.max(10,...sleeps);
+  const W=300,H=66,bw=W/30;
+  const bars=sleeps.map((v,i)=>{const h=v?Math.max(2,(v/maxS)*H):0;return `<rect x="${(i*bw+1).toFixed(1)}" y="${(H-h).toFixed(1)}" width="${(bw-2).toFixed(1)}" height="${h.toFixed(1)}" rx="1" fill="${sleepColor}"/>`;}).join('');
+  const sv=sleeps.filter(v=>v>0);const avgSleep=sv.length?(sv.reduce((a,b)=>a+b,0)/sv.length).toFixed(1):'—';
+  const sleepChart=`<div class="wel-trend-block"><div class="wel-trend-h"><span class="wel-dot-icon" style="background:${sleepColor}"></span> Sleep · avg ${avgSleep} hrs</div><svg viewBox="0 0 ${W} ${H}" class="wel-trend-svg" preserveAspectRatio="none">${bars}</svg></div>`;
+  const checkRows=WELLNESS_TRACKS.filter(t=>t.kind==='check').map(t=>{
+    const done=days.filter(x=>x[t.id]===true).length;
+    const dots=days.map(x=>`<span class="wel-dot ${x[t.id]===true?'on':''}"></span>`).join('');
+    return `<div class="wel-trend-block"><div class="wel-trend-h"><span class="wel-dot-icon" style="background:${t.color}"></span> ${t.name} · ${done}/30 days</div><div class="wel-trend-dots">${dots}</div></div>`;
+  }).join('');
+  return `<div class="wel-trends"><div class="wel-week-h">Last 30 days</div>${sleepChart}${checkRows}</div>`;
+}
 function renderWellness(){
   const target=new Date();target.setHours(0,0,0,0);target.setDate(target.getDate()+wellnessDayOffset);
   const iso=`${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}-${String(target.getDate()).padStart(2,'0')}`;
@@ -1752,7 +1775,7 @@ function renderWellness(){
     return `<div class="wel-week-row"><span class="wel-week-lbl"><span class="wel-dot-icon" style="background:${t.color}"></span> ${t.name}</span><span class="wel-week-dots">${dots}</span></div>`;
   }).join('')}</div>`;
 
-  $('view').innerHTML=`<div class="wel-intro">Daily wellness check-in — your fitness, diet, sleep and mood. Streaks reward consistency.</div>${dayNav}<div class="wel-grid">${cards}</div>${weekStrip}`;
+  $('view').innerHTML=`<div class="wel-intro">Daily wellness check-in — your fitness, diet, sleep and mood. Streaks reward consistency.</div>${dayNav}<div class="wel-grid">${cards}</div>${weekStrip}${wellnessTrends(target)}`;
   wireWellness(iso);
 }
 function wireWellness(iso){
@@ -2977,6 +3000,11 @@ document.addEventListener('visibilitychange',async()=>{
 });
 // Track the text field to dictate into (for the voice mic button)
 document.addEventListener('focusin',e=>{const t=e.target;if(t&&(t.tagName==='TEXTAREA'||(t.tagName==='INPUT'&&/^(text|search|)$/i.test(t.type))))_micTarget=t;});
+// Keyboard shortcuts: Cmd/Ctrl+K = search, Esc = close an open modal/lightbox
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(typeof ready!=='undefined'&&ready&&window.__openSearch)window.__openSearch();return;}
+  if(e.key==='Escape'){const ov=$('overlay');if(ov&&ov.classList.contains('open')){ov.classList.remove('open');return;}const lb=$('lightbox');if(lb&&lb.classList.contains('open'))lb.classList.remove('open');}
+});
 $('overlay').onclick=e=>{if(e.target.id==='overlay')$('overlay').classList.remove('open');};
 $('fileInput').onchange=e=>{processFiles(e.target.files);e.target.value='';setTimeout(()=>{wsImgTarget=null;},500);};
 $('homeLink').onclick=()=>go('home');
