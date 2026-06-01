@@ -450,7 +450,9 @@
   .pm-bg.on{background:rgba(255,255,255,.92);color:#d9a400}
   .pm-body{padding:16px 18px;background:var(--mtint2,var(--surface))}
   .pm-extra{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .pm-extra .pm-shot{position:relative;display:inline-flex}
   .pm-extra img{width:80px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--line)}
+  .pm-bg.sm{width:22px;height:22px;top:5px;right:5px;font-size:12px}
   .entry.photomem .acts{top:12px;left:12px;right:auto}
   .entry.photomem .acts button{background:rgba(0,0,0,.4);color:#fff;backdrop-filter:blur(4px)}
   .entry.photomem .acts button:hover{background:rgba(0,0,0,.6)}
@@ -930,6 +932,7 @@ function recentForAI(days){
   entries.filter(e=>(e.when||((e.created||'')+'').slice(0,10))>=cutoff).forEach(e=>{const t=(TYPES[e.type]&&TYPES[e.type].label)||e.type;lines.push(`- [${t}/${ar(e.area)}] ${(((e.title?e.title+': ':'')+(e.text||''))+'').replace(/\s+/g,' ').slice(0,300)}`);});
   Object.keys(wellnessLog||{}).filter(d=>d>=cutoff).sort().forEach(d=>{lines.push(`- [wellness ${d}] ${JSON.stringify(wellnessLog[d])}`);});
   (studySources||[]).forEach(s=>lines.push(`- [study] ${s.name}: ${s.progress||0}${s.total?('/'+s.total):''} ${s.unit||''}`));
+  (typeof dueRecurring==='function'?dueRecurring():[]).forEach(e=>{const d=recurDueDays(e);lines.push(`- [recurring chore DUE${d<0?', '+(-d)+'d overdue':' today'}] ${e.text} (rhythm: every ${e.every}d)`);});
   return lines.join('\n').slice(0,30000);
 }
 async function aiAsk(q){
@@ -979,6 +982,8 @@ function openMenu(){
   const items=[
     {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
     {label:'✦  Ask / review my week', fn:'__openAI'},
+    {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
+    {label:'📝  Feedback & ideas', fn:'__openFeedback'},
     {label:'🔍  Search everything', fn:'__openSearch'},
     {label:'🗑  Trash', fn:'__openTrash'},
     {label:'⬇  Backup & restore', fn:'__openBackup'},
@@ -991,6 +996,64 @@ function openMenu(){
   $('menuClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openMenu=openMenu;
+// ---- Feedback / ideas repository (saved to Supabase; fetchable by Claude via the feedback function) ----
+let feedback=null;
+async function loadFeedback(){try{const r=await window.storage.get('repo:feedback');feedback=r?JSON.parse(r):[];}catch(e){feedback=[];}return feedback;}
+async function saveFeedback(){try{await window.storage.set('repo:feedback',JSON.stringify(feedback||[]));}catch(e){console.warn('feedback save failed',e);}}
+async function openFeedback(){
+  const m=$('modal');
+  await loadFeedback();
+  m.innerHTML=`<h3>Feedback & ideas</h3><div class="msub">Jot anything you notice as you use the app — bugs, ideas, annoyances. These are saved so they can be addressed on the next update.</div>
+    <div style="display:flex;gap:8px;margin:12px 0"><input id="fbIn" type="text" placeholder="e.g. tags should reuse ones I already have" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none"><button id="fbAdd" class="prim" style="padding:9px 16px">Add</button></div>
+    <div id="fbList" style="max-height:44vh;overflow:auto"></div>
+    <div class="mfoot"><button id="fbClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const draw=()=>{const L=$('fbList');const arr=(feedback||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
+    L.innerHTML=arr.length?arr.map(f=>`<div style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 2px"><div style="flex:1;font-size:13px;color:var(--ink);${f.done?'opacity:.5;text-decoration:line-through':''}">${esc(f.text)}<div style="font-size:11px;color:var(--muted);margin-top:2px">${f.ts?new Date(f.ts).toLocaleDateString():''}</div></div><button data-fbdone="${f.id}" title="${f.done?'mark not done':'mark addressed'}" style="border:none;background:none;cursor:pointer;color:var(--muted);font-size:14px">${f.done?'↺':'✓'}</button><button data-fbdel="${f.id}" title="delete" style="border:none;background:none;cursor:pointer;color:var(--muted);font-size:14px">✕</button></div>`).join(''):'<div class="msub">No notes yet — add the first one above.</div>';
+    L.querySelectorAll('[data-fbdel]').forEach(b=>b.onclick=async()=>{feedback=feedback.filter(x=>x.id!==b.dataset.fbdel);await saveFeedback();draw();});
+    L.querySelectorAll('[data-fbdone]').forEach(b=>b.onclick=async()=>{const f=feedback.find(x=>x.id===b.dataset.fbdone);if(f){f.done=!f.done;await saveFeedback();draw();}});
+  };
+  const addNote=async()=>{const v=$('fbIn').value.trim();if(!v)return;feedback.push({id:uid(),text:v,ts:Date.now(),done:false});await saveFeedback();$('fbIn').value='';draw();};
+  $('fbAdd').onclick=addNote;
+  $('fbIn').addEventListener('keydown',e=>{if(e.key==='Enter')addNote();});
+  $('fbClose').onclick=()=>$('overlay').classList.remove('open');
+  draw();setTimeout(()=>$('fbIn').focus(),30);
+}
+window.__openFeedback=openFeedback;
+// ---- Task brain-dump: free text -> AI sorts into clean tasks (area, tags, recurrence) ----
+async function sortTasks(text){
+  const areaList=areas.map(a=>`"${a.id}" (${a.name})`).join(', ');
+  const existing=allTags().slice(0,80);
+  const out=await askAnthropic(`Turn this brain-dump into a clean list of individual to-do tasks. Split distinct tasks apart and reword each into a short imperative phrase. For each task choose an area id from: ${areaList}. Suggest 0-2 lowercase tags, STRONGLY preferring tags already in use (treat near-synonyms as the same): ${existing.join(', ')||'(none yet)'}. If a task is clearly a recurring household chore, set "every" to a sensible number of days (e.g. dishes 1, vacuum 7, laundry 7, change sheets 14, water plants 4); otherwise omit "every". Reply ONLY as a JSON array, no other text: [{"text":"Wash the dishes","area":"life","tags":["household"],"every":1}]\n\nBRAIN-DUMP:\n"""${text.slice(0,3000)}"""`,900);
+  let t=(out||'').replace(/```json|```/g,'').trim();const arr=JSON.parse(t);return Array.isArray(arr)?arr:[];
+}
+function openTaskDump(){
+  const m=$('modal');
+  m.innerHTML=`<h3>Brain-dump tasks</h3><div class="msub">Type or paste everything on your mind. The AI splits it into clean tasks, files them by area, tags them, and sets a rhythm for recurring chores. You choose which to keep.</div>
+    <textarea id="tdIn" placeholder="e.g. wash dishes, vacuum the floors this weekend, book the dentist, reply to landlord, take out recycling every week…" style="width:100%;box-sizing:border-box;min-height:92px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none;margin:10px 0"></textarea>
+    <button id="tdSort" class="prim" style="width:100%;padding:10px">✦ Sort into tasks</button>
+    <div id="tdOut" style="margin-top:12px"></div>
+    <div class="mfoot"><button id="tdClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  let parsed=[];
+  $('tdSort').onclick=async()=>{
+    const text=$('tdIn').value.trim();if(!text)return;
+    const o=$('tdOut');o.innerHTML='<span style="color:var(--muted)">Sorting…</span>';
+    try{parsed=await sortTasks(text);}catch(e){o.innerHTML='<span style="color:#c0392b">Could not sort — check your connection and try again.</span>';return;}
+    if(!parsed.length){o.innerHTML='<div class="msub">No tasks found in that.</div>';return;}
+    o.innerHTML=`<div style="max-height:36vh;overflow:auto">${parsed.map((p,i)=>{const a=areaById(p.area)||areas[0];return `<label style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer"><input type="checkbox" data-tdi="${i}" checked style="margin-top:3px;flex:none"><span style="flex:1;font-size:13px;color:var(--ink)">${esc(p.text||'')}<div style="font-size:11px;color:var(--muted);margin-top:2px"><span style="color:${a.color}">${esc(a.name)}</span>${(p.tags||[]).map(t=>' #'+esc(t)).join('')}${p.every?` · 🔁 every ${+p.every}d`:''}</div></span></label>`;}).join('')}</div>
+      <button id="tdAdd" class="prim" style="width:100%;padding:10px;margin-top:10px">Add selected tasks</button>`;
+    $('tdAdd').onclick=async()=>{
+      const picks=[...o.querySelectorAll('[data-tdi]')].filter(c=>c.checked).map(c=>parsed[+c.dataset.tdi]).filter(Boolean);
+      if(!picks.length)return;
+      picks.forEach(p=>{const aid=areaById(p.area)?p.area:areas[0].id;const ne={id:uid(),type:'tasks',area:aid,title:null,text:(p.text||'').toString(),source:null,meta:null,tags:[...new Set((p.tags||[]).map(x=>String(x).toLowerCase().trim()).filter(Boolean))],when:todayISO(),imgs:[],gps:null,links:[],done:false,created:new Date().toISOString(),_mod:Date.now()};if(p.every&&+p.every>0){ne.every=+p.every;ne.lastDone=null;}entries.push(ne);});
+      await saveEntries();$('overlay').classList.remove('open');current='tasks';areaFilter=null;pursuitsActive=false;render();showToast(picks.length+' task'+(picks.length>1?'s':'')+' added','',null);
+    };
+  };
+  $('tdClose').onclick=()=>$('overlay').classList.remove('open');
+  setTimeout(()=>$('tdIn').focus(),30);
+}
+window.__openTaskDump=openTaskDump;
 // ---- AI link suggestions (in the Knowledge editor) ----
 async function aiSuggestLinks(){
   const e=entries.find(x=>x.id===wsActiveId); if(!e)return;
@@ -1115,7 +1178,7 @@ function applyJournalTheme(){
   if(current==='knowledge'){if(layer)layer.style.opacity='0';return;}
   const mem=dailyBgMemory();
   if(!mem){if(layer)layer.style.opacity='0';return;}
-  if(layer){layer.style.backgroundImage=`url(${disp(mem.imgs[0])})`;layer.style.opacity='1';}
+  if(layer){layer.style.backgroundImage=`url(${disp(mem.bgImg||mem.imgs[0])})`;layer.style.opacity='1';}
   if(mem.theme){
     const a=mem.theme.accent;
     root.style.setProperty('--accent',`rgb(${a.r},${a.g},${a.b})`);
@@ -1271,14 +1334,17 @@ async function suggestSubject(title,text){
     return {subject:(o.subject||'').toString().replace(/[".]/g,'').slice(0,40)||null,subcat:(o.subcat||'').toString().replace(/[".]/g,'').slice(0,40)||null};
   }catch(e){console.warn('subject suggest failed',e);return null;}
 }
+function allTags(){return [...new Set(entries.flatMap(e=>e.tags||[]))];}
 async function suggestTags(title,text,typeKey){
   const content=(title?title+'. ':'')+text;
   if(content.trim().length<8)return[];
+  const existing=allTags().slice(0,100);
+  const reuse=existing.length?` Tags ALREADY IN USE: ${existing.join(', ')}. STRONGLY prefer reusing one of these existing tags when it reasonably fits — treat near-synonyms as the SAME thing (e.g. if "household" already exists, use it for chores like washing dishes or vacuuming rather than inventing "cleaning"). Only invent a new tag if none of the existing ones fit at all.`:'';
   try{
     const res=await fetch("/.netlify/functions/anthropic",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:120,
-        messages:[{role:"user",content:`Generate 1-4 short lowercase topic tags (single words or short hyphenated phrases) for this ${typeKey} entry. For medical content use proper specialty/topic terms (e.g. cardiology, dka, sepsis). Reply with ONLY a JSON array of strings, no other text.\n\nEntry: """${content.slice(0,1500)}"""`}]})
+        messages:[{role:"user",content:`Generate 1-4 short lowercase topic tags (single words or short hyphenated phrases) for this ${typeKey} entry.${reuse} For medical content use proper specialty/topic terms (e.g. cardiology, dka, sepsis). Reply with ONLY a JSON array of strings, no other text.\n\nEntry: """${content.slice(0,1500)}"""`}]})
     });
     const data=await res.json();
     let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim();
@@ -1492,6 +1558,7 @@ function composerHTML(){
     <div class="opt-h">Options<button class="opt-x" id="optClose">✕</button></div>
     ${sourcePanel}
     ${current==='goals'?`<label class="opt-l">Goal type</label><label class="opt-check"><input type="checkbox" id="goalHabit" ${draft.habit?'checked':''}> Daily habit (track streak)</label>${draft.parent?`<div class="opt-parent">↳ sub-goal of: ${esc((entries.find(x=>x.id===draft.parent)||{}).text||'')}</div>`:''}`:''}
+    ${current==='tasks'?`<label class="opt-l">Repeat</label><label class="opt-check"><input type="checkbox" id="taskRepeat" ${draft.every?'checked':''}> Recurring — every <input type="number" id="taskEvery" min="1" value="${draft.every||7}" style="width:52px;margin:0 4px;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;color:var(--ink)"> days</label>`:''}
     <label class="opt-l">Area</label><select id="area">${areaOpts}</select>
     <label class="opt-l">Date</label><input type="date" id="when" value="${esc(draft.when||'')}">
     <label class="opt-l">Tags</label><input type="text" class="tagin" id="tag" placeholder="comma separated" value="${esc(draft.tag||'')}" style="width:100%">
@@ -1560,14 +1627,14 @@ function entryHTML(e){
   // image-forward photo memory card
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
     const tint=e.theme?`style="--mtint:${rgba(e.theme.accent,0.16)};--mtint2:${rgba(e.theme.dom,0.10)}"`:'';
-    const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:'';
+    const activeSrc=e.bg?(e.bgImg||e.imgs[0]):null;
+    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button></div>`;};
+    const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map((src,i)=>shot(src,i+1,false)).join('')}</div>`:'';
     const tags=(e.tags||[]).map(tg=>`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`).join('');
     const apill=a?`<span class="areapill" style="background:${a.color}22;color:${a.color}">${esc(a.name)}</span>`:'';
     const when=e.when?`<span class="when ${isFuture(e.when)?'future':''}">${relTime(e.when)}</span>`:'';
     return `<div class="entry photomem ${e.bg?'is-bg':''}" ${tint}>
-      <div class="pm-hero"><img src="${disp(e.imgs[0])}" data-full="${e.imgs[0]}">
-        <button class="pm-bg ${e.bg?'on':''}" data-bg="${e.id}" title="${e.bg?'used as background':'use as daily background'}">${e.bg?'★':'☆'}</button>
-      </div>
+      ${shot(e.imgs[0],0,true)}
       <div class="pm-body"><div class="text md">${mdRender(e.text)}</div>${gallery}
         <div class="foot">${apill}${tags}${when}</div></div>
       <div class="acts"><button class="edit" data-edit="${e.id}" title="edit">✎</button><button class="mv" data-mv="${e.id}" title="move / reassign">⇄</button><button class="del" data-del="${e.id}" title="delete">✕</button></div>
@@ -1602,9 +1669,11 @@ function entryHTML(e){
   const textEl=FORMATTED(e.type)?`<div class="text md">${mdRender(e.text)}</div>`:`<div class="text">${esc(e.text)}</div>`;
   const featBtn=e.type==='reflections'?`<button class="feat ${e.featured?'on':''}" data-feat="${e.id}" title="${e.featured?'featured as a daily quote':'feature as a daily quote'}">${e.featured?'★':'☆'}</button>`:'';
   const featBadge=(e.type==='reflections'&&e.featured)?`<span class="feat-badge" title="featured as a daily quote">★ featured</span>`:'';
+  let recurEl='';
+  if(e.type==='tasks'&&e.every){const d=recurDueDays(e);const lab=d>0?`every ${e.every}d`:(d===0?'due today':`overdue ${-d}d`);recurEl=`<span class="when" title="recurring every ${e.every} day${e.every>1?'s':''}" style="${d<=0?'color:#c0392b;font-weight:600':''}">🔁 ${lab}</span>`;}
   return `<div class="entry ${cls} ${e.featured?'is-featured':''}">${check}${aline}
     <div class="body">${titleEl}${srcEl}${textEl}${imgs}${linksEl}
-    <div class="foot">${featBadge}${apill}${tags}${when}</div></div>
+    <div class="foot">${featBadge}${apill}${tags}${recurEl}${when}</div></div>
     <div class="acts">${featBtn}<button class="edit" data-edit="${e.id}" title="edit">✎</button><button class="mv" data-mv="${e.id}" title="move / reassign">⇄</button><button class="del" data-del="${e.id}" title="delete">✕</button></div>
     <div class="menu ${menuOpen===e.id?'open':''}" id="mm-${e.id}">
       <div class="mhead">Change type</div>${moveTypes}
@@ -1618,6 +1687,10 @@ function renderHome(){
   const openT=entries.filter(e=>e.type==='tasks'&&!e.done).length;
   const ahead=entries.filter(e=>!e.done&&isFuture(e.when)).length;
   const sub=`${openT?`${openT} open task${openT>1?'s':''}`:'No open tasks'}${ahead?`, and ${ahead} thing${ahead>1?'s':''} ahead`:''}.`;
+
+  // recurring chores that are due / overdue
+  const due=dueRecurring();
+  const dueEl=due.length?`<div class="home-sec"><div class="sh">Due now${due.length>1?` · ${due.length}`:''}</div>${due.map(e=>{const a=areaById(e.area);const d=recurDueDays(e);const lab=d<0?`${-d}d overdue`:'today';return `<div class="home-row"><button data-rdue="${e.id}" title="mark done" style="border:1px solid var(--line);background:var(--bg);color:var(--accent);border-radius:6px;width:22px;height:22px;cursor:pointer;flex:none;margin-right:4px">✓</button><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span><span class="rwhen future">${lab}</span></div>`;}).join('')}</div>`:'';
 
   // on this day
   const now=new Date();const md=`${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
@@ -1660,6 +1733,7 @@ function renderHome(){
     $('view').innerHTML=`
       ${quoteEl}
       <div class="home-status">${sub}</div>
+      ${dueEl}
       ${strip}
       ${otd?`<div class="onthisday"><div class="od">On this day · ${otd.when.slice(0,4)}</div><div class="oq">"${esc(otd.text.slice(0,260))}${otd.text.length>260?'…':''}"</div></div>`:''}
       <div class="jr-cols">
@@ -1673,12 +1747,14 @@ function renderHome(){
       ${toggle}`;
     $('view').querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{homeMode=b.dataset.hm;savePrefs();renderHome();});
     $('view').querySelectorAll('[data-open-mem]').forEach(b=>b.onclick=()=>{areaFilter=null;current='memories';render();});
+    $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
     return;
   }
 
   $('view').innerHTML=`
     ${quoteEl}
     <div class="home-status">${sub}</div>
+    ${dueEl}
     <div class="home-areas">${acards}</div>
     ${otd?`<div class="onthisday"><div class="od">On this day · ${otd.when.slice(0,4)}</div><div class="oq">"${esc(otd.text.slice(0,220))}${otd.text.length>220?'…':''}"</div></div>`:''}
     <div class="home-sec"><div class="sh">On your mind</div>${todayRows}</div>
@@ -1687,6 +1763,7 @@ function renderHome(){
   `;
   $('view').querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{homeMode=b.dataset.hm;savePrefs();renderHome();});
   $('view').querySelectorAll('.acard').forEach(c=>c.onclick=()=>{areaFilter=c.dataset.area;pursuitsActive=true;pursuitsSub='tasks';current='tasks';render();});
+  $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
 }
 
 // ---------- TIMELINE ----------
@@ -2304,6 +2381,9 @@ function wireSection(){
   if($('when'))$('when').addEventListener('input',e=>{draft.when=e.target.value;});
   if($('memWhen'))$('memWhen').addEventListener('input',e=>{draft.when=e.target.value;const w=$('when');if(w)w.value=e.target.value;});
   if($('goalHabit'))$('goalHabit').addEventListener('change',e=>{draft.habit=e.target.checked;});
+  const _syncRepeat=()=>{const on=$('taskRepeat')&&$('taskRepeat').checked;const n=Math.max(1,parseInt(($('taskEvery')||{}).value,10)||7);draft.every=on?n:0;};
+  if($('taskRepeat'))$('taskRepeat').addEventListener('change',_syncRepeat);
+  if($('taskEvery'))$('taskEvery').addEventListener('input',_syncRepeat);
   if($('area'))$('area').addEventListener('change',e=>{draft.area=e.target.value;});
   $('view').querySelectorAll('.srcfield').forEach(el=>el.addEventListener('input',()=>{draft.meta=draft.meta||{};const k=el.id.replace('sf-','');draft.meta[k]=el.value;}));
   if($('imgBtn'))$('imgBtn').onclick=()=>$('fileInput').click();
@@ -2326,7 +2406,7 @@ function wireSection(){
   $('view').querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>gotoEntry(b.dataset.goto));
   $('view').querySelectorAll('.imgs img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
   $('view').querySelectorAll('.pm-hero img, .pm-extra img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
-  $('view').querySelectorAll('[data-bg]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.bg);if(e){e.bg=!e.bg;if(e.bg&&!e.theme){extractPalette(e.imgs[0],pal=>{if(pal)e.theme=pal;saveEntries();render();});}else{await saveEntries();render();}}});
+  $('view').querySelectorAll('[data-bgid]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.bgid);if(!e)return;const src=e.imgs[+b.dataset.bgidx];if(!src)return;const wasActive=e.bg&&((e.bgImg||e.imgs[0])===src);if(wasActive){e.bg=false;e._mod=Date.now();await saveEntries();render();return;}e.bg=true;e.bgImg=src;e._mod=Date.now();extractPalette(disp(src),pal=>{if(pal)e.theme=pal;saveEntries();render();});});
   $('view').querySelectorAll('[data-feat]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.feat);if(e){e.featured=!e.featured;await saveEntries();renderSection();}});
   if(previewOn)updatePreview();
 }
@@ -2343,7 +2423,7 @@ function startNew(){editingId=null;draft={title:'',text:'',tag:'',when:todayISO(
 function startEdit(id){const e=entries.find(x=>x.id===id);if(!e)return;editingId=id;
   if(e.type!==current){current=e.type;}
   if(e.type==='knowledge')curSource=e.source||'field';
-  draft={title:e.title||'',text:e.text||'',tag:(e.tags||[]).join(', '),when:e.when||'',area:e.area,meta:Object.assign({},e.meta||{}),habit:!!e.habit,parent:e.parent||null};
+  draft={title:e.title||'',text:e.text||'',tag:(e.tags||[]).join(', '),when:e.when||'',area:e.area,meta:Object.assign({},e.meta||{}),habit:!!e.habit,parent:e.parent||null,every:e.every||0};
   composerOpen=true;optionsOpen=false;previewOn=false;pendingImgs=(e.imgs||[]).slice();pendingLinks=(e.links||[]).slice();suggestedTags=[];
   render();
   setTimeout(()=>{const c=document.querySelector('.composer-wrap');if(c)c.scrollIntoView({behavior:'smooth',block:'center'});const i=$('input');if(i)i.focus();},40);
@@ -2802,11 +2882,13 @@ async function add(){
   }
   const areaVal=($('area')||{}).value||draft.area||areas[0].id;
   const isHabit=current==='goals'&&$('goalHabit')&&$('goalHabit').checked;
+  const repEvery=(current==='tasks'&&$('taskRepeat')&&$('taskRepeat').checked)?Math.max(1,parseInt(($('taskEvery')||{}).value,10)||7):0;
   if(editingId){
     const e=entries.find(x=>x.id===editingId);
     if(e){e.type=current;e.area=areaVal;e.title=title||null;e.text=text;e.source=source;e.meta=meta;
       e.tags=[...new Set(manualTags)];e.when=(($('when')||{}).value||null);e.imgs=pendingImgs.slice();e.links=pendingLinks.slice();
       if(current==='goals'){e.habit=isHabit;if(isHabit&&!e.habitLog)e.habitLog=[];}
+      if(current==='tasks'&&repEvery>0){e.every=repEvery;if(!('lastDone' in e))e.lastDone=null;}else if(current==='tasks'){delete e.every;delete e.lastDone;}
       e.theme=null;e._mod=Date.now();}
     closeComposer();renderSection();await saveEntries();ensureThemes(()=>render());return;
   }
@@ -2814,11 +2896,26 @@ async function add(){
     tags:[...new Set(manualTags)],when:(($('when')||{}).value||todayISO()),imgs:pendingImgs.slice(),
     gps:pendingGps||null,links:pendingLinks.slice(),done:false,created:new Date().toISOString(),_mod:Date.now()};
   if(current==='goals'){if(draft.parent)ne.parent=draft.parent;if(isHabit){ne.habit=true;ne.habitLog=[];}}
+  if(current==='tasks'&&repEvery>0){ne.every=repEvery;ne.lastDone=null;}
   entries.push(ne);
   closeComposer();
   renderSection();await saveEntries();ensureThemes(()=>render());
 }
-async function toggle(id){const e=entries.find(x=>x.id===id);if(e){e.done=!e.done;e._mod=Date.now();render();await saveEntries();}}
+// ---- recurring tasks (a task with `every` = N days repeats; `lastDone` tracks the last completion) ----
+function recurDueDays(e){ // days until next due; <=0 means due/overdue; null if not recurring
+  if(!(e&&e.type==='tasks'&&e.every))return null;
+  if(!e.lastDone)return 0; // never done -> due now
+  const last=new Date(e.lastDone+'T00:00:00'),due=new Date(last);due.setDate(due.getDate()+(+e.every||1));
+  const today=new Date(todayISO()+'T00:00:00');
+  return Math.round((due-today)/864e5);
+}
+function dueRecurring(){return entries.filter(e=>e.type==='tasks'&&e.every&&!e.done&&recurDueDays(e)<=0).sort((a,b)=>recurDueDays(a)-recurDueDays(b));}
+async function toggle(id){const e=entries.find(x=>x.id===id);if(!e)return;
+  if(e.type==='tasks'&&e.every){ // recurring: mark done now, reschedule instead of removing
+    e.lastDone=todayISO();e.done=false;e._mod=Date.now();render();await saveEntries();
+    showToast('Done — next due in '+e.every+' day'+(e.every>1?'s':''),'',null);return;
+  }
+  e.done=!e.done;e._mod=Date.now();render();await saveEntries();}
 async function remove(id){await softDelete([id]);render();showToast('Moved to Trash','Undo',async()=>{await restoreFromTrash([id]);render();});}
 async function changeType(id,to){const e=entries.find(x=>x.id===id);if(e){e.type=to;if(!TYPES[to].check)e.done=false;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
 async function changeArea(id,aid){const e=entries.find(x=>x.id===id);if(e){e.area=aid;e._mod=Date.now();menuOpen=null;render();await saveEntries();}}
