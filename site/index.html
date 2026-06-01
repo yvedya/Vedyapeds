@@ -230,6 +230,21 @@
   .cal-legend{font-size:11px;color:var(--muted);text-align:center;margin-top:12px}
   @media(max-width:600px){.cal-cell{min-height:58px;padding:3px}.cal-chip{font-size:9px;padding:1px 3px}.cal-title{font-size:16px;min-width:120px}}
 
+  /* to-learn backlog */
+  .learn-wrap{position:relative;padding:8px 4px;max-width:760px}
+  .learn-head{font-family:var(--serif);font-size:24px;color:var(--ink);margin:4px 0}
+  .learn-sub{font-size:13px;color:var(--muted);margin-bottom:16px}
+  .learn-add{display:flex;gap:8px;margin-bottom:18px}
+  .learn-add input{flex:1;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:10px 13px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none}
+  .learn-row{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding:11px 2px}
+  .learn-row.done .learn-text{color:var(--done);text-decoration:line-through;text-decoration-color:var(--faint)}
+  .learn-check{flex:none;width:24px;height:24px;border:1.5px solid var(--faint);border-radius:50%;background:none;color:var(--accent);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .learn-text{flex:1;font-size:14.5px;color:var(--ink);line-height:1.4}
+  .learn-acts{display:flex;gap:6px;flex:none}
+  .learn-acts button{border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+  .learn-acts button:hover{color:var(--ink);border-color:var(--faint)}
+  .ws-empty-sm{font-size:14px;color:var(--muted);padding:24px 4px;font-style:italic;line-height:1.5}
+
   /* timeline */
   .tl-month{font-family:var(--serif);font-size:15px;color:var(--muted);margin:22px 4px 10px}
   .tl-month:first-child{margin-top:0}
@@ -775,7 +790,7 @@ let homeMode='dashboard'; // 'dashboard' | 'journal'
 let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day', calMonthOffset=0;
 let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
-let entries=[], areas=[], ready=false, carRecords=[];
+let entries=[], areas=[], ready=false, carRecords=[], learnList=[];
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -801,6 +816,7 @@ async function load(){
   applyTheme();setupMic();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{const c=await window.storage.get('repo:car');carRecords=c&&c.value?JSON.parse(c.value):[];}catch(e){carRecords=[];}
+  try{const ll=await window.storage.get('repo:tolearn');learnList=ll&&ll.value?JSON.parse(ll.value):[];}catch(e){learnList=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
@@ -881,9 +897,9 @@ function parseBackup(obj){
   // Handles both formats: in-app download {entries,areas,...} and emailed {data:[{key,value}]}
   if(obj&&Array.isArray(obj.data)){
     const o={};obj.data.forEach(row=>{try{o[row.key]=JSON.parse(row.value);}catch(e){}});
-    return {entries:o['repo:entries']||[],areas:o['repo:areas']||null,study:o['repo:study']||[],wellness:o['repo:wellness']||{},prefs:o['repo:prefs']||null,trash:o['repo:trash']||[],car:o['repo:car']||[]};
+    return {entries:o['repo:entries']||[],areas:o['repo:areas']||null,study:o['repo:study']||[],wellness:o['repo:wellness']||{},prefs:o['repo:prefs']||null,trash:o['repo:trash']||[],car:o['repo:car']||[],tolearn:o['repo:tolearn']||[]};
   }
-  return {entries:obj.entries||[],areas:obj.areas||null,study:obj.study||[],wellness:obj.wellness||{},prefs:obj.prefs||null,trash:obj.trash||[],car:obj.car||[]};
+  return {entries:obj.entries||[],areas:obj.areas||null,study:obj.study||[],wellness:obj.wellness||{},prefs:obj.prefs||null,trash:obj.trash||[],car:obj.car||[],tolearn:obj.tolearn||[]};
 }
 async function applyRestore(p,mode){
   if(mode==='replace'){
@@ -893,16 +909,18 @@ async function applyRestore(p,mode){
     wellnessLog=p.wellness||{};
     trash=p.trash||[];
     if(p.car&&p.car.length)carRecords=p.car;
+    if(p.tolearn&&p.tolearn.length)learnList=p.tolearn;
     if(p.prefs){homeMode=p.prefs.homeMode||homeMode;wsFontScale=p.prefs.wsFontScale||wsFontScale;}
   }else{ // merge: add only items not already present
     const he=new Set(entries.map(e=>e.id));(p.entries||[]).forEach(e=>{if(!he.has(e.id))entries.push(e);});
     const hc=new Set(carRecords.map(r=>r.id));(p.car||[]).forEach(r=>{if(!hc.has(r.id))carRecords.push(r);});
+    const hl=new Set(learnList.map(r=>r.id));(p.tolearn||[]).forEach(r=>{if(!hl.has(r.id))learnList.push(r);});
     const ha=new Set(areas.map(a=>a.id));(p.areas||[]).forEach(a=>{if(!ha.has(a.id))areas.push(a);});
     const hs=new Set(studySources.map(s=>s.id));(p.study||[]).forEach(s=>{if(!hs.has(s.id))studySources.push(s);});
     Object.keys(p.wellness||{}).forEach(k=>{if(!(k in wellnessLog))wellnessLog[k]=p.wellness[k];});
     const ht=new Set(trash.map(e=>e.id));(p.trash||[]).forEach(e=>{if(!ht.has(e.id))trash.push(e);});
   }
-  await saveEntries();await saveAreas();await saveStudy();await saveWellness();await savePrefs();await saveTrash();await saveCar();
+  await saveEntries();await saveAreas();await saveStudy();await saveWellness();await savePrefs();await saveTrash();await saveCar();await saveLearn();
 }
 function openBackupModal(){
   const m=$('modal');const bs="padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:var(--ink);font-size:13px";
@@ -950,6 +968,7 @@ function dataForAI(){
     return `- [${t}/${ar(e.area)}${when?' '+when:''}] ${body} ${tags}`.trim();
   });
   (carRecords||[]).forEach(r=>lines.push(`- [car service record ${r.date||''}${r.mileage?' · '+r.mileage+'mi':''}] ${r.title||''}: ${((r.text||'')+'').replace(/\s+/g,' ').slice(0,500)}`));
+  (learnList||[]).filter(x=>!x.done).forEach(it=>lines.push(`- [want to learn] ${it.text}`));
   let out=lines.join('\n'); if(out.length>40000)out=out.slice(0,40000)+'\n…(older entries truncated)'; return out;
 }
 function recentForAI(days){
@@ -1095,6 +1114,7 @@ function openTaskDump(){
 window.__openTaskDump=openTaskDump;
 // ---- Car service records (own store: photos in Storage + AI-OCR'd text the AI can search) ----
 async function saveCar(){try{await window.storage.set('repo:car',JSON.stringify(carRecords||[]));}catch(e){console.warn('car save failed',e);}}
+async function saveLearn(){try{await window.storage.set('repo:tolearn',JSON.stringify(learnList||[]));}catch(e){console.warn('learn save failed',e);}}
 async function signCarUrls(){
   if(typeof _sb==='undefined'||!_sb)return;
   const need=[];(carRecords||[]).forEach(r=>(r.imgs||[]).forEach(p=>{if(isStoragePath(p)&&!_urlMap[p])need.push(p);}));
@@ -2706,6 +2726,7 @@ function renderWorkspace(){
       <button class="ws-vt ${wsView==='notes'?'on':''}" data-wsview="notes">Notes</button>
       <button class="ws-vt ${wsView==='graph'?'on':''}" data-wsview="graph">Graph</button>
       <button class="ws-vt ${wsView==='review'?'on':''}" data-wsview="review">Review${srDueCount?' ('+srDueCount+')':''}</button>
+      <button class="ws-vt ${wsView==='tolearn'?'on':''}" data-wsview="tolearn">To learn${(learnList||[]).filter(x=>!x.done).length?' ('+(learnList||[]).filter(x=>!x.done).length+')':''}</button>
     </div>
     <div class="ws-search"><input id="wsSearchIn" placeholder="Search notes…" value="${esc(wsSearch)}"></div>
     ${wsStudyFilter?`<div class="ws-studyfilter">Notes from <b>${esc((studySources.find(s=>s.id===wsStudyFilter)||{}).name||'source')}</b><button id="wsClearStudy">✕</button></div>`:''}
@@ -2717,10 +2738,12 @@ function renderWorkspace(){
   let mainInner;
   if(wsView==='graph')mainInner=`<div class="ws-graphwrap"><button class="ws-sidebtn" id="wsToggleSide" title="toggle sidebar">${wsSidebar?'⟨':'⟩'}</button><div class="ws-graph-head">Knowledge graph</div><div class="ws-graph-ctrl"><span style="font-size:12px;color:var(--muted)">Color by</span><button class="ws-vt ${graphColorBy==='area'?'on':''}" data-cb="area">Area</button><button class="ws-vt ${graphColorBy==='source'?'on':''}" data-cb="source">Source</button></div><div id="graphbox" style="width:100%;height:calc(100vh - 130px);border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface)"></div></div>`;
   else if(wsView==='review')mainInner=wsReviewHTML();
+  else if(wsView==='tolearn')mainInner=wsLearnHTML();
   else mainInner=wsActiveId?wsEditorHTML():wsEmptyHTML();
   const main=`<main class="ws-main">${mainInner}</main>`;
   ws.innerHTML=`<div class="ws-shell ${wsSidebar?'':'collapsed'}">${sidebar}${main}</div>`;
   wireWorkspace();
+  if(wsView==='tolearn')wireLearn();
   if(wsView==='graph')drawGraph(entries.filter(e=>e.type==='knowledge'));
 }
 function wsListItem(e){
@@ -2945,6 +2968,43 @@ function wireWorkspace(){
   ws.querySelectorAll('.ws-imgs img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
 }
 let wsImgTarget=null;
+// ---- "To learn" backlog (lives in the Knowledge workspace) ----
+function wsLearnHTML(){
+  const items=(learnList||[]).slice().sort((a,b)=>((a.done?1:0)-(b.done?1:0))||((b.ts||0)-(a.ts||0)));
+  const rows=items.length?items.map(it=>{
+    const linked=it.note&&entries.find(x=>x.id===it.note);
+    const act=linked?`<button data-learn-open="${it.id}" title="open the note">open note</button>`:`<button data-learn-start="${it.id}" title="turn this into a note">＋ note</button>`;
+    return `<div class="learn-row ${it.done?'done':''}">
+      <button class="learn-check" data-learn-done="${it.id}" title="${it.done?'mark not learned':'mark learned'}">${it.done?'✓':'○'}</button>
+      <span class="learn-text">${esc(it.text)}</span>
+      <span class="learn-acts">${act}<button data-learn-del="${it.id}" title="remove">✕</button></span>
+    </div>`;}).join(''):'<div class="ws-empty-sm">Nothing yet. Jot a topic you want to learn — an article to read, a concept to review, a question to chase down — and turn it into a full note when you’re ready.</div>';
+  return `<div class="learn-wrap">
+    <button class="ws-sidebtn" id="wsToggleSide" title="toggle sidebar">${wsSidebar?'⟨':'⟩'}</button>
+    <div class="learn-head">To learn</div>
+    <div class="learn-sub">A backlog of things you want to study. Add a topic now; promote it to a full note when you sit down with it.</div>
+    <div class="learn-add"><input id="learnIn" placeholder="e.g. ECMO anticoagulation protocols…"><button id="learnAdd" class="add">Add</button></div>
+    <div class="learn-list">${rows}</div>
+  </div>`;
+}
+function wireLearn(){
+  const add=async()=>{const i=$('learnIn');if(!i)return;const v=i.value.trim();if(!v)return;learnList.push({id:uid(),text:v,ts:Date.now(),done:false,note:null,_mod:Date.now()});await saveLearn();renderWorkspace();setTimeout(()=>{const n=$('learnIn');if(n)n.focus();},30);};
+  if($('learnAdd'))$('learnAdd').onclick=add;
+  if($('learnIn'))$('learnIn').addEventListener('keydown',e=>{if(e.key==='Enter')add();});
+  document.querySelectorAll('[data-learn-done]').forEach(b=>b.onclick=async()=>{const it=learnList.find(x=>x.id===b.dataset.learnDone);if(it){it.done=!it.done;it._mod=Date.now();await saveLearn();renderWorkspace();}});
+  document.querySelectorAll('[data-learn-del]').forEach(b=>b.onclick=async()=>{learnList=learnList.filter(x=>x.id!==b.dataset.learnDel);await saveLearn();renderWorkspace();});
+  document.querySelectorAll('[data-learn-start]').forEach(b=>b.onclick=()=>learnStartNote(b.dataset.learnStart));
+  document.querySelectorAll('[data-learn-open]').forEach(b=>b.onclick=()=>{const it=learnList.find(x=>x.id===b.dataset.learnOpen);if(it&&it.note){flushWsSave();wsActiveId=it.note;wsHistoryOpen=false;wsView='notes';renderWorkspace();}});
+}
+function learnStartNote(id){
+  const it=learnList.find(x=>x.id===id);if(!it)return;
+  flushWsSave();
+  const e={id:uid(),type:'knowledge',area:(areas[0]||{}).id,source:'field',meta:{},title:it.text,text:'',tags:[],when:null,imgs:[],links:[],done:false,created:new Date().toISOString(),updated:new Date().toISOString(),history:[]};
+  entries.push(e);it.note=e.id;it.done=true;it._mod=Date.now();
+  saveEntries();saveLearn();
+  wsActiveId=e.id;wsHistoryOpen=false;wsView='notes';renderWorkspace();
+  setTimeout(()=>{const t=$('wsText');if(t)t.focus();},40);
+}
 function wsCreate(){
   flushWsSave();
   const src=wsSourceFilter||'field';
@@ -3367,7 +3427,7 @@ async function _syncDirty(){
   const dirty=_getDirty();if(!dirty.size)return false;
   const parse=s=>{try{return s?JSON.parse(s):null;}catch(e){return null;}};
   const localOf=k=>parse(localStorage.getItem(_CK(k)));
-  const arrKeys=['repo:entries','repo:areas','repo:study','repo:trash','repo:car'];
+  const arrKeys=['repo:entries','repo:areas','repo:study','repo:trash','repo:car','repo:tolearn'];
   const allKeys=[...arrKeys,'repo:wellness','repo:prefs'];
   const cloud={};
   for(const k of allKeys){try{cloud[k]=parse(await _sbGet(k));}catch(e){cloud[k]=null;}}
@@ -3391,6 +3451,7 @@ async function _syncDirty(){
   studySources=final['repo:study']||studySources;
   trash=final['repo:trash']||trash;
   if(final['repo:car'])carRecords=final['repo:car'];
+  if(final['repo:tolearn'])learnList=final['repo:tolearn'];
   if(final['repo:wellness'])wellnessLog=final['repo:wellness'];
   const pr=final['repo:prefs'];if(pr){homeMode=pr.homeMode||homeMode;wsFontScale=pr.wsFontScale||wsFontScale;theme=pr.theme||theme;}
   if(typeof render==='function'&&!(typeof composerOpen!=='undefined'&&composerOpen))render();
@@ -3439,6 +3500,7 @@ window.__exportData=()=>{
       study:(typeof studySources!=='undefined')?studySources:[],
       wellness:(typeof wellnessLog!=='undefined')?wellnessLog:{},
       car:(typeof carRecords!=='undefined')?carRecords:[],
+      tolearn:(typeof learnList!=='undefined')?learnList:[],
       prefs:{ homeMode:(typeof homeMode!=='undefined')?homeMode:'dashboard', wsFontScale:(typeof wsFontScale!=='undefined')?wsFontScale:1 }
     };
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
