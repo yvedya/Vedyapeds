@@ -674,15 +674,8 @@
     <div id="authMsg" style="margin-top:14px;font-size:13px;color:#8a8780;min-height:18px;text-align:center;"></div>
   </div>
 </div>
-<div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 24px);">
-  <button id="themeBtn" onclick="window.__toggleTheme&&window.__toggleTheme()" title="Toggle dark mode" style="padding:6px 10px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;">☾</button>
-  <button id="askBtn" onclick="window.__openAI&&window.__openAI()" title="Ask your repository / weekly review" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">✦ Ask</button>
-  <button id="searchBtn" onclick="window.__openSearch&&window.__openSearch()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">🔍 Search</button>
-  <button id="tplBtn" onclick="window.__openTemplates&&window.__openTemplates()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">📋 Template</button>
-  <button id="trashBtn" onclick="window.__openTrash&&window.__openTrash()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Trash</button>
-  <button id="exportBtn" onclick="window.__openBackup&&window.__openBackup()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Backup</button>
-  <button id="changePwBtn" onclick="window.__changePw&&window.__changePw()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Change password</button>
-  <button id="signOutBtn" onclick="window.__signOut&&window.__signOut()" style="padding:6px 12px;border:1px solid #e8e5dd;border-radius:8px;background:rgba(255,255,255,.92);color:#8a8780;font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;">Sign out</button>
+<div id="acctBar" style="display:none;position:fixed;bottom:12px;left:12px;z-index:5000;">
+  <button id="menuBtn" onclick="window.__openMenu&&window.__openMenu()" title="Menu" style="padding:7px 14px;border:1px solid #e8e5dd;border-radius:9px;background:rgba(255,255,255,.92);color:#8a8780;font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;">☰ Menu</button>
 </div>
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:6000;background:#1f1d1a;color:#fff;padding:10px 16px;border-radius:10px;font-family:'Inter',sans-serif;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);align-items:center;gap:14px;"><span id="toastMsg"></span><button id="toastAction" style="background:none;border:none;color:#9ec7a4;font-weight:600;cursor:pointer;font-size:13px;padding:0;">Undo</button></div>
 <button id="micBtn" title="Dictate into the text box you're typing in" style="display:none;position:fixed;bottom:16px;right:16px;z-index:5500;width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);align-items:center;justify-content:center;">🎤</button>
@@ -984,6 +977,25 @@ function openTemplates(){
   $('tplClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openTemplates=openTemplates;
+// ---- Consolidated menu (declutters the bottom bar) ----
+function openMenu(){
+  const m=$('modal');
+  const items=[
+    {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
+    {label:'✦  Ask / review my week', fn:'__openAI'},
+    {label:'🔍  Search everything', fn:'__openSearch'},
+    {label:'📋  New from template', fn:'__openTemplates'},
+    {label:'🗑  Trash', fn:'__openTrash'},
+    {label:'⬇  Backup & restore', fn:'__openBackup'},
+    {label:'🔑  Change password', fn:'__changePw'},
+    {label:'↩  Sign out', fn:'__signOut'}
+  ];
+  m.innerHTML=`<h3>Menu</h3><div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">${items.map((it,i)=>`<button data-mi="${i}" style="text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px">${it.label}</button>`).join('')}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
+  $('overlay').classList.add('open');
+  m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
+  $('menuClose').onclick=()=>$('overlay').classList.remove('open');
+}
+window.__openMenu=openMenu;
 // ---- AI link suggestions (in the Knowledge editor) ----
 async function aiSuggestLinks(){
   const e=entries.find(x=>x.id===wsActiveId); if(!e)return;
