@@ -775,7 +775,7 @@ let homeMode='dashboard'; // 'dashboard' | 'journal'
 let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day', calMonthOffset=0;
 let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
-let entries=[], areas=[], ready=false;
+let entries=[], areas=[], ready=false, carRecords=[];
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -800,6 +800,7 @@ async function load(){
   try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';dietGoal=pr.dietGoal||'';}}catch(e){}
   applyTheme();setupMic();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
+  try{const c=await window.storage.get('repo:car');carRecords=c&&c.value?JSON.parse(c.value):[];}catch(e){carRecords=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
@@ -880,9 +881,9 @@ function parseBackup(obj){
   // Handles both formats: in-app download {entries,areas,...} and emailed {data:[{key,value}]}
   if(obj&&Array.isArray(obj.data)){
     const o={};obj.data.forEach(row=>{try{o[row.key]=JSON.parse(row.value);}catch(e){}});
-    return {entries:o['repo:entries']||[],areas:o['repo:areas']||null,study:o['repo:study']||[],wellness:o['repo:wellness']||{},prefs:o['repo:prefs']||null,trash:o['repo:trash']||[]};
+    return {entries:o['repo:entries']||[],areas:o['repo:areas']||null,study:o['repo:study']||[],wellness:o['repo:wellness']||{},prefs:o['repo:prefs']||null,trash:o['repo:trash']||[],car:o['repo:car']||[]};
   }
-  return {entries:obj.entries||[],areas:obj.areas||null,study:obj.study||[],wellness:obj.wellness||{},prefs:obj.prefs||null,trash:obj.trash||[]};
+  return {entries:obj.entries||[],areas:obj.areas||null,study:obj.study||[],wellness:obj.wellness||{},prefs:obj.prefs||null,trash:obj.trash||[],car:obj.car||[]};
 }
 async function applyRestore(p,mode){
   if(mode==='replace'){
@@ -891,15 +892,17 @@ async function applyRestore(p,mode){
     studySources=p.study||[];
     wellnessLog=p.wellness||{};
     trash=p.trash||[];
+    if(p.car&&p.car.length)carRecords=p.car;
     if(p.prefs){homeMode=p.prefs.homeMode||homeMode;wsFontScale=p.prefs.wsFontScale||wsFontScale;}
   }else{ // merge: add only items not already present
     const he=new Set(entries.map(e=>e.id));(p.entries||[]).forEach(e=>{if(!he.has(e.id))entries.push(e);});
+    const hc=new Set(carRecords.map(r=>r.id));(p.car||[]).forEach(r=>{if(!hc.has(r.id))carRecords.push(r);});
     const ha=new Set(areas.map(a=>a.id));(p.areas||[]).forEach(a=>{if(!ha.has(a.id))areas.push(a);});
     const hs=new Set(studySources.map(s=>s.id));(p.study||[]).forEach(s=>{if(!hs.has(s.id))studySources.push(s);});
     Object.keys(p.wellness||{}).forEach(k=>{if(!(k in wellnessLog))wellnessLog[k]=p.wellness[k];});
     const ht=new Set(trash.map(e=>e.id));(p.trash||[]).forEach(e=>{if(!ht.has(e.id))trash.push(e);});
   }
-  await saveEntries();await saveAreas();await saveStudy();await saveWellness();await savePrefs();await saveTrash();
+  await saveEntries();await saveAreas();await saveStudy();await saveWellness();await savePrefs();await saveTrash();await saveCar();
 }
 function openBackupModal(){
   const m=$('modal');const bs="padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:var(--ink);font-size:13px";
@@ -946,6 +949,7 @@ function dataForAI(){
     const tags=(e.tags||[]).map(x=>'#'+x).join(' ');
     return `- [${t}/${ar(e.area)}${when?' '+when:''}] ${body} ${tags}`.trim();
   });
+  (carRecords||[]).forEach(r=>lines.push(`- [car service record ${r.date||''}${r.mileage?' · '+r.mileage+'mi':''}] ${r.title||''}: ${((r.text||'')+'').replace(/\s+/g,' ').slice(0,500)}`));
   let out=lines.join('\n'); if(out.length>40000)out=out.slice(0,40000)+'\n…(older entries truncated)'; return out;
 }
 function recentForAI(days){
@@ -1006,6 +1010,7 @@ function openMenu(){
     {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
     {label:'✦  Ask / review my week', fn:'__openAI'},
     {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
+    {label:'🚗  Car records', fn:'__openCarRecords'},
     {label:'📝  Feedback & ideas', fn:'__openFeedback'},
     {label:'🔍  Search everything', fn:'__openSearch'},
     {label:'🗑  Trash', fn:'__openTrash'},
@@ -1088,6 +1093,98 @@ function openTaskDump(){
   setTimeout(()=>$('tdIn').focus(),30);
 }
 window.__openTaskDump=openTaskDump;
+// ---- Car service records (own store: photos in Storage + AI-OCR'd text the AI can search) ----
+async function saveCar(){try{await window.storage.set('repo:car',JSON.stringify(carRecords||[]));}catch(e){console.warn('car save failed',e);}}
+async function signCarUrls(){
+  if(typeof _sb==='undefined'||!_sb)return;
+  const need=[];(carRecords||[]).forEach(r=>(r.imgs||[]).forEach(p=>{if(isStoragePath(p)&&!_urlMap[p])need.push(p);}));
+  if(!need.length)return;
+  try{const {data,error}=await _sb.storage.from('photos').createSignedUrls(need,3600);if(!error&&data)data.forEach(d=>{if(d&&d.signedUrl&&d.path)_urlMap[d.path]=d.signedUrl;});}catch(e){}
+}
+// downscale a File, upload to the photos bucket; resolves {path,dataUrl} (dataUrl reused for OCR)
+function uploadCarImage(file){
+  return new Promise((resolve,reject)=>{
+    if(!file.type.startsWith('image/'))return reject(new Error('not an image'));
+    const r=new FileReader();
+    r.onload=e=>{const img=new Image();
+      img.onload=async()=>{
+        const max=2000;let w=img.width,h=img.height;if(w>max||h>max){const s=max/Math.max(w,h);w=Math.round(w*s);h=Math.round(h*s);}
+        const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);
+        const dataUrl=c.toDataURL('image/jpeg',0.85);
+        const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.85));
+        if(!blob)return reject(new Error('process failed'));
+        const path=`${_uid}/${(window.crypto&&crypto.randomUUID?crypto.randomUUID():uid()+uid())}.jpg`;
+        try{const up=await _sb.storage.from('photos').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+          if(up.error)return reject(up.error);
+          const su=await _sb.storage.from('photos').createSignedUrl(path,3600);
+          if(su.data&&su.data.signedUrl)_urlMap[path]=su.data.signedUrl;
+          resolve({path,dataUrl});
+        }catch(err){reject(err);}
+      };
+      img.onerror=()=>reject(new Error('image load failed'));img.src=e.target.result;
+    };
+    r.onerror=()=>reject(new Error('read failed'));r.readAsDataURL(file);
+  });
+}
+async function extractCarRecord(dataUrl){
+  try{
+    const m=dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);if(!m)return null;
+    const res=await fetch("/.netlify/functions/anthropic",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:900,messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:m[1],data:m[2]}},
+        {type:"text",text:`This is a photo of a car service/maintenance record, invoice, or receipt. Extract the details. Reply ONLY as JSON, no other text: {"vendor":"shop/dealer name or null","date":"YYYY-MM-DD or null","mileage":"odometer reading (number) or null","services":["each service or part as a short phrase"],"total":"total cost exactly as written or null","text":"a clean, COMPLETE plain-text transcription of all readable text on the document"}.`}
+      ]}]})});
+    const data=await res.json();let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim().replace(/```json|```/g,'').trim();
+    return JSON.parse(t);
+  }catch(e){console.warn('car OCR failed',e);return null;}
+}
+async function openCarRecords(){
+  await signCarUrls();
+  const m=$('modal');
+  m.innerHTML=`<h3>🚗 Car records</h3><div class="msub">Upload service records, invoices, and receipts. Each photo is read by AI, so you can ask things like "when was my last oil change?" in ✦ Ask.</div>
+    <button id="carAdd" class="prim" style="width:100%;padding:11px;margin:10px 0">＋ Add service record (photo)</button>
+    <input type="file" id="carFile" accept="image/*" multiple style="display:none">
+    <div id="carStatus" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
+    <div id="carList" style="max-height:50vh;overflow:auto"></div>
+    <div class="mfoot"><button id="carClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const draw=()=>{
+    const L=$('carList');const arr=(carRecords||[]).slice().sort((a,b)=>(((b.date||'')+' '+(b.ts||0))+'').localeCompare(((a.date||'')+' '+(a.ts||0))+''));
+    L.innerHTML=arr.length?arr.map(r=>`<div style="display:flex;gap:10px;border-bottom:1px solid var(--line);padding:9px 2px">
+      ${r.imgs&&r.imgs.length?`<img data-car-img="${esc(r.imgs[0])}" src="${disp(r.imgs[0])}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none;border:1px solid var(--line)">`:''}
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;color:var(--ink);font-weight:600">${esc(r.title||'Service record')}</div>
+        <div style="font-size:11px;color:var(--muted)">${esc(r.date||'')}${r.mileage?' · '+esc(String(r.mileage))+' mi':''}${r.total?' · '+esc(String(r.total)):''}${r.imgs&&r.imgs.length>1?' · '+r.imgs.length+' photos':''}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:3px;max-height:46px;overflow:hidden">${esc((r.text||'').replace(/\s+/g,' ').slice(0,160))}</div>
+      </div>
+      <button data-car-del="${r.id}" title="delete" style="border:none;background:none;cursor:pointer;color:var(--muted);font-size:14px;flex:none">✕</button>
+    </div>`).join(''):'<div class="msub">No records yet. Tap “Add service record” to upload your first.</div>';
+    L.querySelectorAll('[data-car-img]').forEach(im=>im.onclick=()=>openLb(im.dataset.carImg));
+    L.querySelectorAll('[data-car-del]').forEach(b=>b.onclick=async()=>{if(!confirm('Delete this record?'))return;carRecords=carRecords.filter(x=>x.id!==b.dataset.carDel);await saveCar();draw();});
+  };
+  $('carAdd').onclick=()=>$('carFile').click();
+  $('carFile').onchange=async(ev)=>{
+    const files=[...(ev.target.files||[])];if(!files.length)return;
+    const st=$('carStatus');let meta=null;const imgs=[],allText=[];
+    for(let i=0;i<files.length;i++){
+      st.textContent=`Uploading & reading photo ${i+1} of ${files.length}…`;
+      try{const {path,dataUrl}=await uploadCarImage(files[i]);imgs.push(path);
+        const ocr=await extractCarRecord(dataUrl);
+        if(ocr){if(!meta)meta=ocr;if(ocr.text)allText.push(ocr.text);}
+      }catch(e){console.warn('car upload/ocr',e);}
+    }
+    if(!imgs.length){st.textContent='Could not upload — check your connection and try again.';return;}
+    meta=meta||{};
+    const svc=Array.isArray(meta.services)?meta.services.filter(Boolean):[];
+    const title=[meta.vendor,svc.slice(0,2).join(', ')].filter(Boolean).join(' — ')||'Service record';
+    const body=[svc.length?'Services: '+svc.join(', '):'',meta.total?'Total: '+meta.total:'',meta.mileage?'Mileage: '+meta.mileage:'',allText.join('\n\n')].filter(Boolean).join('\n');
+    carRecords.push({id:uid(),title,date:meta.date||todayISO(),vendor:meta.vendor||null,mileage:meta.mileage||null,total:meta.total||null,services:svc,text:body,imgs,ts:Date.now(),_mod:Date.now()});
+    await saveCar();st.textContent='Saved ✓';ev.target.value='';draw();
+  };
+  $('carClose').onclick=()=>$('overlay').classList.remove('open');
+  draw();
+}
+window.__openCarRecords=openCarRecords;
 // ---- AI link suggestions (in the Knowledge editor) ----
 async function aiSuggestLinks(){
   const e=entries.find(x=>x.id===wsActiveId); if(!e)return;
@@ -1231,6 +1328,7 @@ async function refreshImageUrls(){
   if(typeof _sb==='undefined'||!_sb) return;
   const paths=new Set();
   entries.forEach(e=>(e.imgs||[]).forEach(v=>{ if(isStoragePath(v)) paths.add(v); }));
+  (carRecords||[]).forEach(r=>(r.imgs||[]).forEach(v=>{ if(isStoragePath(v)) paths.add(v); }));
   const need=[...paths].filter(p=>!_urlMap[p]);
   if(!need.length) return;
   try{
@@ -3269,7 +3367,7 @@ async function _syncDirty(){
   const dirty=_getDirty();if(!dirty.size)return false;
   const parse=s=>{try{return s?JSON.parse(s):null;}catch(e){return null;}};
   const localOf=k=>parse(localStorage.getItem(_CK(k)));
-  const arrKeys=['repo:entries','repo:areas','repo:study','repo:trash'];
+  const arrKeys=['repo:entries','repo:areas','repo:study','repo:trash','repo:car'];
   const allKeys=[...arrKeys,'repo:wellness','repo:prefs'];
   const cloud={};
   for(const k of allKeys){try{cloud[k]=parse(await _sbGet(k));}catch(e){cloud[k]=null;}}
@@ -3292,6 +3390,7 @@ async function _syncDirty(){
   if(final['repo:areas']&&final['repo:areas'].length)areas=final['repo:areas'];
   studySources=final['repo:study']||studySources;
   trash=final['repo:trash']||trash;
+  if(final['repo:car'])carRecords=final['repo:car'];
   if(final['repo:wellness'])wellnessLog=final['repo:wellness'];
   const pr=final['repo:prefs'];if(pr){homeMode=pr.homeMode||homeMode;wsFontScale=pr.wsFontScale||wsFontScale;theme=pr.theme||theme;}
   if(typeof render==='function'&&!(typeof composerOpen!=='undefined'&&composerOpen))render();
@@ -3339,6 +3438,7 @@ window.__exportData=()=>{
       areas:(typeof areas!=='undefined')?areas:[],
       study:(typeof studySources!=='undefined')?studySources:[],
       wellness:(typeof wellnessLog!=='undefined')?wellnessLog:{},
+      car:(typeof carRecords!=='undefined')?carRecords:[],
       prefs:{ homeMode:(typeof homeMode!=='undefined')?homeMode:'dashboard', wsFontScale:(typeof wsFontScale!=='undefined')?wsFontScale:1 }
     };
     const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
