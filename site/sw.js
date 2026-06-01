@@ -2,7 +2,7 @@
 // Strategy: never cache Supabase (data/auth/storage stay live); network-first for
 // page navigations (so updates always show when online, shell loads when offline);
 // network-first-then-cache for other assets (CDN libs, fonts, icons).
-const CACHE = 'vedya-v1';
+const CACHE = 'vedya-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

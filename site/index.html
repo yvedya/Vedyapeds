@@ -665,7 +665,19 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="vedya">
-<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(){});});}</script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',function(){
+  // Auto-reload once when a NEW version takes over (not on the very first install),
+  // so a stale cached copy can never get stuck again.
+  var hadController=!!navigator.serviceWorker.controller, refreshing=false;
+  navigator.serviceWorker.addEventListener('controllerchange',function(){
+    if(refreshing||!hadController) return; refreshing=true; window.location.reload();
+  });
+  navigator.serviceWorker.register('/sw.js').then(function(reg){
+    try{reg.update();}catch(e){}
+    // Re-check for a newer version whenever the app is reopened/refocused.
+    document.addEventListener('visibilitychange',function(){ if(!document.hidden){ try{reg.update();}catch(e){} } });
+  }).catch(function(){});
+});}</script>
 </head>
 <body>
 <!-- Login screen (real auth via Supabase). Covers the app until signed in. -->
@@ -673,7 +685,10 @@
   <div style="width:100%;max-width:320px;text-align:center;">
     <div style="font-family:'Newsreader',Georgia,serif;font-size:34px;color:#1f1d1a;margin-bottom:8px;">Welcome, Vedya</div>
     <div style="color:#8a8780;font-size:14px;margin-bottom:24px;">Enter your password</div>
-    <input id="authPass" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:12px 14px;margin-bottom:12px;border:1px solid #e8e5dd;border-radius:10px;font-size:15px;background:#fff;color:#1f1d1a;text-align:center;">
+    <div style="position:relative;margin-bottom:12px;">
+      <input id="authPass" type="password" placeholder="Password" autocomplete="current-password" style="width:100%;box-sizing:border-box;padding:12px 40px;border:1px solid #e8e5dd;border-radius:10px;font-size:15px;background:#fff;color:#1f1d1a;text-align:center;">
+      <button id="authToggle" type="button" title="Show password" aria-label="Show password" style="position:absolute;top:50%;right:8px;transform:translateY(-50%);border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:4px;color:#8a8780;">👁</button>
+    </div>
     <button id="authEnter" style="width:100%;padding:12px;border:none;border-radius:10px;background:#3a5a40;color:#fff;font-size:15px;font-weight:500;cursor:pointer;">Enter</button>
     <div id="authMsg" style="margin-top:14px;font-size:13px;color:#8a8780;min-height:18px;text-align:center;"></div>
   </div>
@@ -3143,25 +3158,35 @@ window.__exportData=()=>{
 (async()=>{
   const M=document.getElementById('authMsg');
   if(!_sb){ M.style.color='#c0392b'; M.textContent='Could not load the login system. Check your connection and refresh.'; return; }
-  const P=document.getElementById('authPass'), enterBtn=document.getElementById('authEnter');
+  const P=document.getElementById('authPass'), enterBtn=document.getElementById('authEnter'), tog=document.getElementById('authToggle');
+  // Show / hide password toggle (helps on phones, where you can't see what you typed).
+  if(tog){ tog.onclick=()=>{ const show=P.type==='password'; P.type=show?'text':'password'; tog.textContent=show?'🙈':'👁'; tog.title=tog.ariaLabel=show?'Hide password':'Show password'; P.focus(); }; }
   let busy=false;
+  // Never let a hung network request leave us stuck on "Checking…" forever.
+  const NET_TIMEOUT=15000;
+  const withTimeout=(p)=>Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),NET_TIMEOUT))]);
+  const netFail=()=>{ busy=false; M.style.color='#c0392b'; M.textContent='Couldn’t reach the server — check your connection, refresh the page, and try again.'; };
   async function attempt(){
     if(busy) return;
     const pass=P.value;
     if(!pass){ M.style.color='#c0392b'; M.textContent='Please enter your password.'; return; }
     busy=true; M.style.color='#8a8780'; M.textContent='Checking…';
     // First, try to log in to the existing account.
-    const { error } = await _sb.auth.signInWithPassword({ email:SB_EMAIL, password:pass });
-    if(!error){ _startApp(); return; }
+    let res;
+    try{ res = await withTimeout(_sb.auth.signInWithPassword({ email:SB_EMAIL, password:pass })); }
+    catch(e){ netFail(); return; }
+    if(!res.error){ _startApp(); return; }
     // No existing login — treat as first-time setup: create the single account with this password.
-    const { data, error:se } = await _sb.auth.signUp({ email:SB_EMAIL, password:pass });
-    if(se){
+    let su;
+    try{ su = await withTimeout(_sb.auth.signUp({ email:SB_EMAIL, password:pass })); }
+    catch(e){ netFail(); return; }
+    if(su.error){
       busy=false;
-      if(/registered|already|exists/i.test(se.message)){ M.style.color='#c0392b'; M.textContent='Incorrect password.'; }
-      else { M.style.color='#c0392b'; M.textContent=se.message; }
+      if(/registered|already|exists/i.test(su.error.message)){ M.style.color='#c0392b'; M.textContent='Incorrect password.'; }
+      else { M.style.color='#c0392b'; M.textContent=su.error.message; }
       return;
     }
-    if(data.session){ _startApp(); return; }       // first-time setup complete, logged straight in
+    if(su.data.session){ _startApp(); return; }       // first-time setup complete, logged straight in
     busy=false; M.style.color='#c0392b'; M.textContent='Almost there — turn off "Confirm email" in Supabase, then try again.';
   }
   enterBtn.onclick=attempt;
