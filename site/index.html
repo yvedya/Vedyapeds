@@ -725,7 +725,7 @@ const SOURCES={
 };
 const SOURCE_ORDER=['field','textbook','article'];
 const SOURCE_COLORS={field:'#D85A30',textbook:'#378ADD',article:'#7F77DD'};
-let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false, trash=[], theme='light';
+let current='home', areaFilter=null, activeTag=null, search='', pendingImgs=[], pendingLinks=[], menuOpen=null, suggestedTags=[], tagBusy=false, trash=[], theme='light', dietGoal='';
 let curSource='field', graphColorBy='area', collapsedChapters={};
 let composerOpen=false, previewOn=false, optionsOpen=false, toolbarMin=false, editingId=null;
 let draft={title:'',text:'',tag:'',when:'',area:null};
@@ -757,13 +757,13 @@ async function load(){
   if(!areas.length)areas=DEFAULT_AREAS.slice();
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
-  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';}}catch(e){}
+  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';dietGoal=pr.dietGoal||'';}}catch(e){}
   applyTheme();setupMic();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
-async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme}));}catch(e){}}
+async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme,dietGoal}));}catch(e){}}
 function applyTheme(){document.documentElement.classList.toggle('dark',theme==='dark');const b=$('themeBtn');if(b)b.textContent=theme==='dark'?'☀':'☾';}
 window.__toggleTheme=()=>{theme=theme==='dark'?'light':'dark';applyTheme();savePrefs();};
 // ---- Voice capture (browser speech-to-text, free) ----
@@ -1755,7 +1755,7 @@ function renderWellness(){
     if(t.id==='diet'){
       const cal=day.calories,pro=day.protein;
       const stats=(cal!=null||pro!=null)?`<div class="diet-stats">${cal!=null?`<span class="ds"><b>${cal}</b> cal</span>`:''}${pro!=null?`<span class="ds"><b>${pro}</b>g protein</span>`:''}</div>`:'';
-      nutritionEl=`${stats}<button class="diet-scan" data-diet-scan title="scan a nutrition screenshot"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Scan screenshot</button>`;
+      nutritionEl=`${stats}<input class="wel-note" data-diet-goal placeholder="🎯 Diet goal (e.g. ≥150g protein, no late snacking)" value="${esc(dietGoal)}"><button class="diet-scan" data-diet-scan title="scan a nutrition screenshot"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor" style="width:14px;height:14px;vertical-align:-2px;margin-right:5px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Scan screenshot</button>`;
     }
     return `<div class="wel-card" style="border-left:3px solid ${t.color}">
       <div class="wel-top"><span class="wel-dot-icon" style="background:${t.color}"></span><span class="wel-name">${t.name}</span>${streakEl}${checkbox}<button class="wel-hist-btn" data-wel-hist="${t.id}" title="history">⋯</button></div>
@@ -1785,6 +1785,7 @@ function wireWellness(iso){
   $('view').querySelectorAll('[data-wel-h]').forEach(b=>b.onclick=async()=>{const d=ensure();const id=b.dataset.welH;d[id]=Math.max(0,Math.min(24,(+d[id]||0)+(+b.dataset.d)));await saveWellness();renderWellness();});
   $('view').querySelectorAll('[data-wel-hin]').forEach(inp=>inp.onchange=async()=>{const d=ensure();d[inp.dataset.welHin]=+inp.value||0;await saveWellness();renderWellness();});
   $('view').querySelectorAll('[data-wel-note]').forEach(inp=>inp.onchange=async()=>{const d=ensure();const v=inp.value.trim();if(v)d[inp.dataset.welNote+'_note']=v;else delete d[inp.dataset.welNote+'_note'];await saveWellness();});
+  $('view').querySelectorAll('[data-diet-goal]').forEach(inp=>inp.onchange=async()=>{dietGoal=inp.value.trim();await savePrefs();});
   $('view').querySelectorAll('[data-wel-hist]').forEach(b=>b.onclick=()=>openWellnessHistory(b.dataset.welHist));
   $('view').querySelectorAll('[data-diet-scan]').forEach(b=>b.onclick=()=>{
     const fi=document.createElement('input');fi.type='file';fi.accept='image/*';
@@ -2077,20 +2078,20 @@ function wireLogs(){
     // detect study progress in the background, surface in Study tab
     if(studySources.length){detectStudyProgress(combinedText).then(props=>{if(props&&props.length){studyProposed=props;if(current==='study')renderStudy();else{const ind=document.querySelector('[data-k="study"]');if(ind)ind.classList.add('has-badge');}}});}
     // detect wellness check-ins from the log for this day
-    detectWellness(combinedText).then(w=>{if(w&&Object.keys(w).length){wellnessLog[iso]=Object.assign({},wellnessLog[iso]||{},w);saveWellness();const ind=document.querySelector('[data-k="wellness"]');if(ind&&current!=='wellness')ind.classList.add('has-badge');}});
+    detectWellness(combinedText,dietGoal).then(w=>{if(w&&Object.keys(w).length){wellnessLog[iso]=Object.assign({},wellnessLog[iso]||{},w);saveWellness();const ind=document.querySelector('[data-k="wellness"]');if(ind&&current!=='wellness')ind.classList.add('has-badge');}});
   };
 }
-async function detectWellness(text){
+async function detectWellness(text,goal){
   try{
     const res=await fetch("/.netlify/functions/anthropic",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:300,
-        messages:[{role:"user",content:`From this daily log, extract wellness info. Return ONLY a JSON object. Possible keys:\n"fitness": {"done":true, "note":"brief description of the workout"} if they exercised\n"diet": {"done":true, "note":"brief description of what/how they ate"} if diet is mentioned\n"sleep": {"hours":number, "note":"brief sleep description"} if sleep mentioned\nOmit any key with no signal. Keep notes concise (under 12 words). Reply with ONLY the JSON object.\n\nLog: """${text.slice(0,1500)}"""`}]})
+        messages:[{role:"user",content:`From this daily log, extract wellness info. Return ONLY a JSON object. Possible keys:\n"fitness": {"done":true, "note":"brief description of the workout"} if they exercised\n"diet": {"done":true_or_false, "note":"brief description of what/how they ate"} — include if any food/diet is mentioned, but set "done" true ONLY if the eating clearly MEETS the user's diet goal${goal?` ("${goal}")`:` (no goal set, so use false)`}; merely logging food does NOT count as meeting the goal\n"sleep": {"hours":number, "note":"brief sleep description"} if sleep mentioned\nOmit any key with no signal. Keep notes concise (under 12 words). Reply with ONLY the JSON object.\n\nLog: """${text.slice(0,1500)}"""`}]})
     });
     const data=await res.json();let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim().replace(/```json|```/g,'').trim();
     const o=JSON.parse(t);const out={};
     if(o.fitness&&o.fitness.done){out.fitness=true;if(o.fitness.note)out.fitness_note=String(o.fitness.note).slice(0,120);}
-    if(o.diet&&o.diet.done){out.diet=true;if(o.diet.note)out.diet_note=String(o.diet.note).slice(0,120);}
+    if(o.diet){if(o.diet.done)out.diet=true;if(o.diet.note)out.diet_note=String(o.diet.note).slice(0,120);}
     if(o.sleep&&typeof o.sleep.hours==='number'&&o.sleep.hours>0&&o.sleep.hours<=24){out.sleep=o.sleep.hours;if(o.sleep.note)out.sleep_note=String(o.sleep.note).slice(0,120);}
     return out;
   }catch(e){console.warn('wellness detect failed',e);return null;}
