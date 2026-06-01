@@ -137,6 +137,7 @@
   .entry{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;display:flex;gap:14px;align-items:flex-start;transition:.18s;position:relative}
   .entry:hover{border-color:var(--faint)}
   .entry .check{flex-shrink:0;width:20px;height:20px;border:1.5px solid var(--faint);border-radius:50%;cursor:pointer;margin-top:2px;transition:.15s;display:flex;align-items:center;justify-content:center}
+  .entry .check.ro{pointer-events:none;cursor:default}
   .entry .check:hover{border-color:var(--accent)}
   .entry.done .check{background:var(--accent);border-color:var(--accent)}
   .entry .check svg{opacity:0;transition:.15s;width:11px;height:11px}
@@ -206,6 +207,25 @@
   .feat-badge{font-size:11px;color:#b88600;background:#fbf0d0;border-radius:100px;padding:2px 10px;letter-spacing:.02em;display:inline-flex;align-items:center;gap:3px}
   .entry.is-featured{box-shadow:inset 3px 0 0 #e8c14d}
   .none{font-size:13.5px;color:var(--faint);font-style:italic;font-family:var(--serif);padding:4px}
+
+  /* calendar */
+  .cal-nav{display:flex;align-items:center;justify-content:center;gap:12px;margin:8px 0 12px}
+  .cal-nav button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:16px}
+  .cal-nav .cal-today{width:auto;padding:0 12px;font-size:13px}
+  .cal-title{font-family:var(--serif);font-size:18px;color:var(--ink);min-width:160px;text-align:center}
+  .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .cal-dow{text-align:center;font-size:11px;color:var(--muted);padding:4px 0;font-weight:600}
+  .cal-cell{min-height:78px;border:1px solid var(--line);border-radius:8px;padding:4px;background:var(--surface);overflow:hidden}
+  .cal-cell.empty{border:none;background:none}
+  .cal-cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .cal-daynum{font-size:12px;color:var(--muted);margin-bottom:2px;display:flex;align-items:center;gap:4px}
+  .cal-cell.today .cal-daynum{color:var(--accent);font-weight:700}
+  .cal-dot{width:5px;height:5px;border-radius:50%;background:var(--muted);display:inline-block}
+  .cal-chip{font-size:10px;line-height:1.3;padding:2px 4px;margin-bottom:2px;background:var(--bg);border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;color:var(--ink)}
+  .cal-chip.done{opacity:.5;text-decoration:line-through}
+  .cal-more{font-size:10px;color:var(--muted);padding-left:4px}
+  .cal-legend{font-size:11px;color:var(--muted);text-align:center;margin-top:12px}
+  @media(max-width:600px){.cal-cell{min-height:58px;padding:3px}.cal-chip{font-size:9px;padding:1px 3px}.cal-title{font-size:16px;min-width:120px}}
 
   /* timeline */
   .tl-month{font-family:var(--serif);font-size:15px;color:var(--muted);margin:22px 4px 10px}
@@ -749,7 +769,7 @@ let draft={title:'',text:'',tag:'',when:'',area:null};
 // workspace (knowledge mode)
 let wsActiveId=null, wsSidebar=true, wsSourceFilter=null, wsSearch='', wsSaveTimer=null, wsSaveState='', wsHistoryOpen=false, wsColTree={}, wsView='notes', wsFontScale=1, wsPreviewOn=false, wsGroupBy='subject', wsStudyFilter=null, wsCardsOpen=false, wsCardsBusy=false, wsReviewReveal=false;
 let homeMode='dashboard'; // 'dashboard' | 'journal'
-let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day';
+let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day', calMonthOffset=0;
 let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
 let entries=[], areas=[], ready=false;
@@ -1024,7 +1044,18 @@ window.__openFeedback=openFeedback;
 async function sortTasks(text){
   const areaList=areas.map(a=>`"${a.id}" (${a.name})`).join(', ');
   const existing=allTags().slice(0,80);
-  const out=await askAnthropic(`Turn this brain-dump into a clean list of individual to-do tasks. Split distinct tasks apart and reword each into a short imperative phrase. For each task choose an area id from: ${areaList}. Suggest 0-2 lowercase tags, STRONGLY preferring tags already in use (treat near-synonyms as the same): ${existing.join(', ')||'(none yet)'}. If a task is clearly a recurring household chore, set "every" to a sensible number of days (e.g. dishes 1, vacuum 7, laundry 7, change sheets 14, water plants 4); otherwise omit "every". If urgency is clear (deadlines, time-sensitive wording like "urgent"/"ASAP"/"today"), set "priority" to "high", "med", or "low"; otherwise omit it. Reply ONLY as a JSON array, no other text: [{"text":"Wash the dishes","area":"life","tags":["household"],"every":1,"priority":"low"}]\n\nBRAIN-DUMP:\n"""${text.slice(0,3000)}"""`,900);
+  const out=await askAnthropic(`You convert the user's notes/instructions into clean to-do tasks. Rules:
+- Each distinct task = one array item. Reword to a short imperative phrase (e.g. "do laundry" -> "Do laundry").
+- STRIP command framing: phrases like "create a task to", "add a task", "make a ... task", "remind me to", "I need to", "task:" are NOT part of the task — output ONLY the actual action.
+- RECURRENCE: if it says how often to repeat, set "every" to a number of DAYS and DO NOT keep the recurrence words in "text". Map: daily / every day = 1; every other day = 2; weekly / every week / repeats weekly = 7; biweekly / every two weeks = 14; monthly = 30; "every N days" = N; "every N weeks" = N*7. Also infer a sensible rhythm for obvious chores even if unstated (dishes 1, laundry 7, vacuum 7, change sheets 14, water plants 4).
+- AREA: choose an area id from: ${areaList}.
+- TAGS: ALWAYS give 1-2 lowercase tags, STRONGLY preferring tags already in use (treat near-synonyms as the same — dishes/vacuum/laundry -> "household"): ${existing.join(', ')||'(none yet)'}.
+- PRIORITY: if urgency is clear (deadline / "urgent" / "ASAP" / "today"), set "priority" to "high", "med", or "low"; otherwise omit it.
+Reply ONLY as a JSON array, no other text.
+Example — input "Create a do laundry task that repeats weekly" -> [{"text":"Do laundry","area":"life","tags":["household"],"every":7}]
+
+NOTES:
+"""${text.slice(0,3000)}"""`,900);
   let t=(out||'').replace(/```json|```/g,'').trim();const arr=JSON.parse(t);return Array.isArray(arr)?arr:[];
 }
 function openTaskDump(){
@@ -1623,7 +1654,7 @@ function scheduleSuggest(){
 }
 
 // ---------- ENTRY CARD ----------
-function entryHTML(e){
+function entryHTML(e,ro){
   const t=TYPES[e.type];const a=areaById(e.area);
   // image-forward photo memory card
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
@@ -1644,7 +1675,7 @@ function entryHTML(e){
         <div class="mhead">Change area</div>${areas.filter(x=>x.id!==e.area).map(x=>`<button data-area="${e.id}" data-aid="${x.id}">${esc(x.name)}</button>`).join('')}</div></div>`;
   }
   const cls=t.cls+(e.done?' done':'');
-  const check=t.check?`<div class="check" data-id="${e.id}"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`:'';
+  const check=t.check?`<div class="check${ro?' ro':''}" ${ro?'':`data-id="${e.id}"`} title="${ro?'completed':''}"><svg viewBox="0 0 12 12" fill="none"><path d="M2 6.5L4.5 9L10 3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`:'';
   const aline=a?`<div class="arealine" style="background:${a.color}"></div>`:'';
   const titleEl=(t.titled&&e.title)?`<div class="etitle">${esc(e.title)}</div>`:'';
   const imgs=(e.imgs&&e.imgs.length)?`<div class="imgs">${e.imgs.map(src=>`<img src="${disp(src)}" data-full="${src}">`).join('')}</div>`:'';
@@ -2077,9 +2108,13 @@ function logDate(e){
   return e.when||(e.created||'').slice(0,10);
 }
 function renderLogs(){
-  const viewToggle=`<div class="log-viewtog"><button class="${logView==='day'?'on':''}" data-logview="day">Day</button><button class="${logView==='timeline'?'on':''}" data-logview="timeline">Timeline</button></div>`;
+  const viewToggle=`<div class="log-viewtog"><button class="${logView==='day'?'on':''}" data-logview="day">Day</button><button class="${logView==='timeline'?'on':''}" data-logview="timeline">Timeline</button><button class="${logView==='calendar'?'on':''}" data-logview="calendar">Calendar</button></div>`;
   if(logView==='timeline'){
     renderTimelineInner(viewToggle);
+    return;
+  }
+  if(logView==='calendar'){
+    renderCalendarInner(viewToggle);
     return;
   }
   const dayMs=864e5;
@@ -2128,14 +2163,14 @@ function renderLogs(){
     <button id="logNext" ${logDayOffset>=0?'disabled':''} title="next day">›</button>
   </div>`;
 
-  const list=dayEntries.length?`<div class="list">${dayEntries.map(entryHTML).join('')}</div>`
+  const list=dayEntries.length?`<div class="list">${dayEntries.map(e=>entryHTML(e,true)).join('')}</div>`
     :`<div class="empty"><div class="mark">·</div><p>Nothing logged for ${dayLabel.toLowerCase()} yet.</p></div>`;
 
   $('view').innerHTML=viewToggle+areaStripHTML()+composer+dayNav+list;
   wireAreaStrip();wireLogs();
   $('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});
-  // standard entry wiring (edit/del/etc reuse section wiring helpers)
-  $('view').querySelectorAll('.check').forEach(c=>c.onclick=()=>toggle(c.dataset.id));
+  // standard entry wiring (edit/del/etc reuse section wiring helpers); checks here are read-only (the Log is a record)
+  $('view').querySelectorAll('.check:not(.ro)').forEach(c=>c.onclick=()=>toggle(c.dataset.id));
   $('view').querySelectorAll('.edit').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
   $('view').querySelectorAll('.del').forEach(b=>b.onclick=()=>remove(b.dataset.del));
   $('view').querySelectorAll('.mv').forEach(b=>b.onclick=ev=>{ev.stopPropagation();menuOpen=menuOpen===b.dataset.mv?null:b.dataset.mv;renderLogs();});
@@ -2256,6 +2291,44 @@ function renderTimelineInner(viewToggle){
   $('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});
   $('view').querySelectorAll('[data-tl]').forEach(el=>el.onclick=()=>gotoEntry(el.dataset.tl));
   $('view').querySelectorAll('.ti-imgs img').forEach(im=>im.onclick=ev=>{ev.stopPropagation();openLb(im.dataset.full);});
+}
+// Month calendar showing when tasks are due (non-recurring by due date; recurring on next-due; other dated entries as a dot).
+function renderCalendarInner(viewToggle){
+  const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const now=new Date();now.setHours(0,0,0,0);
+  const base=new Date(now.getFullYear(),now.getMonth()+calMonthOffset,1);
+  const y=base.getFullYear(),mo=base.getMonth();
+  const monthLabel=base.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const firstDow=base.getDay(),daysInMonth=new Date(y,mo+1,0).getDate(),todayISOv=iso(now);
+  const byDay={};const push=(k,it)=>{if(k)(byDay[k]=byDay[k]||[]).push(it);};
+  entries.forEach(e=>{
+    if(areaFilter&&e.area!==areaFilter)return;
+    if(e.type==='tasks'){
+      if(e.every){const nd=e.lastDone?(()=>{const d=new Date(e.lastDone+'T00:00:00');d.setDate(d.getDate()+(+e.every||1));return iso(d);})():todayISOv;push(nd,{e,recurring:true});}
+      else if(e.when)push(e.when,{e,done:!!e.done});
+    } else if(e.when)push(e.when,{e,other:true});
+  });
+  let html=(viewToggle||'')+areaStripHTML();
+  html+=`<div class="cal-nav"><button data-calnav="-1" title="previous month">‹</button><span class="cal-title">${monthLabel}</span><button data-calnav="1" title="next month">›</button>${calMonthOffset!==0?`<button data-calnav="0" class="cal-today">Today</button>`:''}</div>`;
+  html+=`<div class="cal-grid">`+['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  for(let i=0;i<firstDow;i++)html+=`<div class="cal-cell empty"></div>`;
+  for(let day=1;day<=daysInMonth;day++){
+    const k=iso(new Date(y,mo,day));const items=byDay[k]||[];
+    const tasks=items.filter(it=>!it.other),others=items.filter(it=>it.other);
+    const chips=tasks.slice(0,3).map(it=>{
+      const ov=!it.done&&!it.recurring&&k<todayISOv;
+      const col=ov?'#c0392b':(it.e.priority==='high'?'#c0392b':it.e.priority==='med'?'#c47f17':((areaById(it.e.area)||{}).color||'var(--accent)'));
+      return `<div class="cal-chip${it.done?' done':''}" data-go="${it.e.id}" style="border-left:3px solid ${col}" title="${esc(it.e.text)}">${it.recurring?'🔁 ':''}${esc((it.e.text||'').slice(0,22))}</div>`;
+    }).join('');
+    const more=tasks.length>3?`<div class="cal-more">+${tasks.length-3} more</div>`:'';
+    const dot=others.length?`<span class="cal-dot" title="${others.length} other entr${others.length>1?'ies':'y'} this day"></span>`:'';
+    html+=`<div class="cal-cell${k===todayISOv?' today':''}"><div class="cal-daynum">${day}${dot}</div>${chips}${more}</div>`;
+  }
+  html+=`</div><div class="cal-legend">Tap a task to open it · 🔁 recurring · red = overdue</div>`;
+  $('view').innerHTML=html;wireAreaStrip();
+  $('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});
+  $('view').querySelectorAll('[data-calnav]').forEach(b=>b.onclick=()=>{const v=b.dataset.calnav;calMonthOffset=(v==='0')?0:calMonthOffset+(+v);renderLogs();});
+  $('view').querySelectorAll('.cal-chip[data-go]').forEach(c=>c.onclick=()=>gotoEntry(c.dataset.go));
 }
 
 // ---------- SECTION ----------
