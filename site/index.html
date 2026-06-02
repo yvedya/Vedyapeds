@@ -1082,6 +1082,7 @@ function openMenu(){
       {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
       {label:'🔍  Search everything', fn:'__openSearch'},
       {label:'🎨  Note colors', fn:'__openNotePalette'},
+      {label:'⤓  Export Anki cards', fn:'__openCardExport'},
       {label:CAR_ICON+'  Car records', fn:'__openCarRecords'},
     ]},
     {h:'Share',items:[
@@ -1717,6 +1718,49 @@ function exportCards(note){
   // mark exported
   note.cardsExported=new Date().toISOString();saveEntries();
 }
+// ---- batch export: one .txt across many notes (all / today / not-yet-exported) ----
+function cardNotes(scope){
+  let ns=entries.filter(e=>e.type==='knowledge'&&(e.cards||[]).length);
+  if(scope==='today'){const t=todayISO();ns=ns.filter(e=>logDate(e)===t);}
+  else if(scope==='new'){ns=ns.filter(e=>!e.cardsExported||(e.updated&&e.cardsExported&&e.updated>e.cardsExported));}
+  return ns;
+}
+function exportCardsBatch(scope){
+  const ns=cardNotes(scope);
+  if(!ns.length){showToast('No cards to export for that.','',null);return;}
+  const lines=[];
+  ns.forEach(note=>{
+    const subjTag=[note.subject,note.subcat].filter(Boolean).join('::').replace(/\s+/g,'_');
+    const tags=['repo::'+note.id,subjTag].filter(Boolean).join(' ');
+    (note.cards||[]).forEach(c=>{const text=(''+c).replace(/\t/g,' ').replace(/\r?\n/g,'<br>');lines.push(`${text}\t${tags}`);});
+    note.cardsExported=new Date().toISOString();
+  });
+  saveEntries();
+  const blob=new Blob([lines.join('\n')],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;
+  a.download=`anki_cards_${scope}_${todayISO()}.txt`;
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  showToast(`Exported ${lines.length} card${lines.length===1?'':'s'} from ${ns.length} note${ns.length===1?'':'s'}`,'',null);
+}
+function openCardExport(){
+  const m=$('modal');
+  const allN=cardNotes('all'),todayN=cardNotes('today'),newN=cardNotes('new');
+  const count=arr=>arr.reduce((a,e)=>a+(e.cards||[]).length,0);
+  const btn=(id,label,arr)=>`<button id="${id}" class="add" ${arr.length?'':'disabled'} style="text-align:left;${arr.length?'':'opacity:.5;cursor:default'}">⤓ ${label} · <b>${count(arr)}</b> card${count(arr)===1?'':'s'} from ${arr.length} note${arr.length===1?'':'s'}</button>`;
+  m.innerHTML=`<h3>Export Anki cards</h3><div class="msub">Downloads ONE .txt with all the selected cards. In Anki: File → Import, choose the “Cloze” note type. Cards keep their repo tag so review progress can sync back.</div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin:14px 0">
+      ${btn('exAll','All cards',allN)}
+      ${btn('exToday','Worked on today',todayN)}
+      ${btn('exNew','Not yet exported (new/edited)',newN)}
+    </div>
+    <div class="mfoot"><button id="exClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  if($('exAll'))$('exAll').onclick=()=>{exportCardsBatch('all');openCardExport();};
+  if($('exToday'))$('exToday').onclick=()=>{exportCardsBatch('today');openCardExport();};
+  if($('exNew'))$('exNew').onclick=()=>{exportCardsBatch('new');openCardExport();};
+  $('exClose').onclick=()=>$('overlay').classList.remove('open');
+}
+window.__openCardExport=openCardExport;
 // generate Anki cloze cards from a note's content
 async function generateCloze(title,text){
   try{
@@ -3145,6 +3189,7 @@ function renderWorkspace(){
     ${wsStudyFilter?`<div class="ws-studyfilter">Notes from <b>${esc((studySources.find(s=>s.id===wsStudyFilter)||{}).name||'source')}</b><button id="wsClearStudy">✕</button></div>`:''}
     ${groupTog}
     <button class="ws-newnote" id="wsNew">＋ New note</button>
+    <button class="ws-focusbtn" id="wsCardExportAll" style="margin-top:6px">⤓ Export Anki cards</button>
     <div class="ws-list">${listHTML}</div>
   </aside>`;
 
@@ -3296,6 +3341,7 @@ function wireWorkspace(){
   if($('wsClearStudy'))$('wsClearStudy').onclick=()=>{wsStudyFilter=null;renderWorkspace();};
   if($('wsToggleSide'))$('wsToggleSide').onclick=()=>{wsSidebar=!wsSidebar;renderWorkspace();};
   if($('wsFocus'))$('wsFocus').onclick=()=>toggleStudyTimer();
+  if($('wsCardExportAll'))$('wsCardExportAll').onclick=openCardExport;
   if($('wsSearchIn'))$('wsSearchIn').oninput=e=>{wsSearch=e.target.value;const p=e.target.selectionStart;renderWorkspace();const n=$('wsSearchIn');if(n){n.focus();n.setSelectionRange(p,p);}};
   ws.querySelectorAll('[data-wsview]').forEach(b=>b.onclick=()=>{flushWsSave();wsView=b.dataset.wsview;wsReviewReveal=false;renderWorkspace();});
   if($('wsReveal'))$('wsReveal').onclick=()=>{wsReviewReveal=true;renderWorkspace();};
