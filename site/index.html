@@ -1733,12 +1733,18 @@ RULES:
 3. Use SEPARATE numbers only for facts that each genuinely deserve their own card (e.g. first-line vs second-line treatment).
 4. Never cloze the topic/term that is serving as the cue for the fact.
 5. Prefer FEWER, higher-value cards (often ~2-5 for a typical note). Each array item is its own card; restart numbering at c1 for each.
+6. SELF-CONTAINED CONTEXT: assume each card will be reviewed alone among THOUSANDS of unrelated cards, with NO note title visible. Every card must carry enough framing to be unambiguous on its own — name the parent topic and the aspect (e.g. start with "In dialysis disequilibrium syndrome, …" or "Dialysis disequilibrium syndrome — pathogenesis: …"). Never rely on the title or neighboring cards.
+7. ALWAYS include ONE definition/identity card that tests the note's central concept itself — the concept NAME as the answer, cued by its definition (the opposite of rule 4, which is about not hiding a cue you're using for OTHER facts). E.g. "{{c1::Dialysis disequilibrium syndrome}} is a set of neurologic manifestations seen during or shortly after dialysis."
 
 EXAMPLES (note the intent):
+- Definition/identity card (the concept is the answer, cued by what it is):
+  "{{c1::Dialysis disequilibrium syndrome}} is a set of neurologic manifestations seen during or shortly after dialysis."
 - One card, the 3 risk groups recalled together (the syndrome is the cue, left visible):
   "Dialysis disequilibrium syndrome is most commonly seen in {{c1::first hemodialysis treatment}}, {{c1::young children}}, and patients with {{c1::high BUN}} before dialysis initiation."
+- Self-contained context added so the card stands alone (topic + aspect named up front):
+  "In dialysis disequilibrium syndrome, the intracerebral acidosis theory proposes hemodialysis causes a {{c1::drop in intracellular pH and rise in CO₂}}, which makes protein-bound {{c1::Na⁺ and K⁺ dissociate and become osmotically active}}, {{c1::drawing water into brain cells}}."
 - Two cards (first-line vs second-line are distinct), with the secondary idea "dialysis can continue" left as visible context:
-  "{{c1::Sodium remodeling}} (changing the sodium dialysate bath) is a specific intervention for DDS that allows dialysis to continue, while {{c2::hypertonic saline}} can be considered if sodium remodeling is insufficient."
+  "For dialysis disequilibrium syndrome, {{c1::sodium remodeling}} (changing the sodium dialysate bath) allows dialysis to continue, while {{c2::hypertonic saline}} can be considered if sodium remodeling is insufficient."
 
 Reply with ONLY a JSON array of strings, each string one cloze card. No other text.
 
