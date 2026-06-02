@@ -344,7 +344,7 @@
   /* ====== KNOWLEDGE WORKSPACE ====== */
   body.ws-mode{background:var(--bg)}
   #workspace{max-width:1200px;margin:0 auto}
-  .ws-shell{display:grid;grid-template-columns:280px 1fr;gap:0;height:100vh}
+  .ws-shell{display:grid;grid-template-columns:280px 1fr;gap:0;height:100vh;background:var(--bg)}
   .ws-shell.collapsed{grid-template-columns:1fr}
   .ws-side{border-right:1px solid var(--line);display:flex;flex-direction:column;height:100vh;background:var(--surface)}
   .ws-side.hidden{display:none}
@@ -401,7 +401,7 @@
   .ws-subjai:hover{filter:brightness(.97)}
   .sc-notes{margin-top:10px;width:100%;background:none;border:1px solid var(--line);border-radius:8px;padding:7px;font-size:12.5px;color:var(--accent);cursor:pointer;font-family:var(--sans)}
   .sc-notes:hover{border-color:var(--accent);background:var(--accent-soft)}
-  .ws-main{height:100vh;overflow-y:auto}
+  .ws-main{height:100vh;overflow-y:auto;background:var(--bg)}
   .ws-empty{height:100%;display:flex;align-items:center;justify-content:center;position:relative}
   .ws-empty-in{text-align:center;color:var(--faint)}
   .ws-empty-mark{font-family:var(--serif);font-size:34px;font-style:italic;margin-bottom:10px}
@@ -670,6 +670,7 @@
   .wel-hours button:hover{border-color:var(--faint);color:var(--ink)}
   .wel-hin{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:15px;outline:none;text-align:center;font-family:var(--sans)}
   .wel-unit{font-size:12.5px;color:var(--muted)}
+  .wel-subnote{font-size:11.5px;color:var(--muted);margin-top:6px}
   .wel-dot-icon{display:inline-block;width:10px;height:10px;border-radius:50%;flex-shrink:0}
   .diet-stats{display:flex;gap:14px;margin:11px 0 9px;padding:9px 12px;background:var(--bg);border-radius:9px}
   .diet-stats .ds{font-size:13px;color:var(--muted)}
@@ -1137,7 +1138,7 @@ function openNotePalette(){
 window.__openNotePalette=openNotePalette;
 // ---- Feedback / ideas repository (saved to Supabase; fetchable by Claude via the feedback function) ----
 let feedback=null;
-async function loadFeedback(){try{const r=await window.storage.get('repo:feedback');feedback=r?JSON.parse(r):[];}catch(e){feedback=[];}return feedback;}
+async function loadFeedback(){try{const r=await window.storage.get('repo:feedback');feedback=(r&&r.value)?JSON.parse(r.value):[];}catch(e){feedback=[];}return feedback;}
 async function saveFeedback(){try{await window.storage.set('repo:feedback',JSON.stringify(feedback||[]));}catch(e){console.warn('feedback save failed',e);}}
 async function openFeedback(){
   const m=$('modal');
@@ -2291,6 +2292,8 @@ function renderWellness(){
   const iso=`${target.getFullYear()}-${String(target.getMonth()+1).padStart(2,'0')}-${String(target.getDate()).padStart(2,'0')}`;
   const dayLabel=wellnessDayOffset===0?'Today':wellnessDayOffset===-1?'Yesterday':target.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
   const day=wellnessLog[iso]||{};
+  const prevD=new Date(target);prevD.setDate(prevD.getDate()-1);
+  const nightLabel=`${prevD.toLocaleDateString('en-US',{month:'short',day:'numeric'})} → ${target.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
 
   const dayNav=`<div class="log-daynav">
     <button id="welPrev" title="previous day">‹</button>
@@ -2308,7 +2311,7 @@ function renderWellness(){
       checkbox=`<button class="wel-checkbox ${on?'on':''}" data-wel-check="${t.id}" style="${on?`background:${t.color};border-color:${t.color}`:''}" title="${on?'done today':'mark done'}" aria-label="${t.name} done">${on?'✓':''}</button>`;
     }else if(t.kind==='hours'){
       const v=day[t.id]||'';
-      control=`<div class="wel-control"><div class="wel-hours"><button data-wel-h="${t.id}" data-d="-0.5">−</button><input class="wel-hin" data-wel-hin="${t.id}" type="number" step="0.5" min="0" max="24" placeholder="—" value="${v}"><button data-wel-h="${t.id}" data-d="0.5">+</button><span class="wel-unit">hrs</span></div></div>`;
+      control=`<div class="wel-control"><div class="wel-hours"><button data-wel-h="${t.id}" data-d="-0.5">−</button><input class="wel-hin" data-wel-hin="${t.id}" type="number" step="0.5" min="0" max="24" placeholder="—" value="${v}"><button data-wel-h="${t.id}" data-d="0.5">+</button><span class="wel-unit">hrs</span></div>${t.id==='sleep'?`<div class="wel-subnote">🌙 night of ${nightLabel}</div>`:''}</div>`;
     }
     const note=day[t.id+'_note']||'';
     const noteEl=`<input class="wel-note" data-wel-note="${t.id}" placeholder="add detail…" value="${esc(note)}">`;
@@ -3269,7 +3272,7 @@ function wireWorkspace(){
   if($('wsNew'))$('wsNew').onclick=wsCreate;
   if($('wsNew2'))$('wsNew2').onclick=wsCreate;
   if($('wsScanNew'))$('wsScanNew').onclick=()=>{wsCreate();setTimeout(()=>{if($('wsScan'))$('wsScan').click();},120);};
-  ws.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{flushWsSave();wsActiveId=b.dataset.open;wsHistoryOpen=false;wsView='notes';renderWorkspace();});
+  ws.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{flushWsSave();wsActiveId=b.dataset.open;wsHistoryOpen=false;wsView='notes';if(window.innerWidth<=760)wsSidebar=false;renderWorkspace();});
 
   // editor
   const ta=$('wsText'),pv=$('wsPreview');
@@ -3505,6 +3508,7 @@ function render(){
   applyJournalTheme();
   if(inWorkspace){renderWorkspace();return;}
   renderNav();
+  {const hl=$('homeLink');if(hl)hl.textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}
   if(!ready){$('view').innerHTML='<div class="loading">Loading your repository…</div>';return;}
   const _v=$('view'); if(_v){_v.classList.remove('viewfade');void _v.offsetWidth;_v.classList.add('viewfade');}
   if(current==='home')renderHome();
