@@ -515,6 +515,11 @@
   .pm-hero img{width:100%;max-height:340px;object-fit:cover;display:block;cursor:pointer}
   .pm-bg{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
   .pm-bg.on{background:rgba(255,255,255,.92);color:#d9a400}
+  .pm-car{position:absolute;top:54px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);filter:grayscale(.7) opacity(.75)}
+  .pm-car.on{background:rgba(255,255,255,.92);filter:none}
+  .home-bgctrl{display:flex;gap:8px;justify-content:flex-end;margin:-2px 2px 12px}
+  .home-bgctrl button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 13px;font-size:12.5px;font-family:var(--sans);cursor:pointer}
+  .home-bgctrl button:hover{border-color:var(--accent);color:var(--accent)}
   .pm-body{padding:16px 18px;background:var(--mtint2,var(--surface))}
   .pm-extra{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .pm-extra .pm-shot{position:relative;display:inline-flex}
@@ -820,6 +825,7 @@ let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day',
 let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
 let entries=[], areas=[], ready=false, carRecords=[], learnList=[], notePalette='terracotta';
+let homeBgOverride=null, _carIdx=0; // session-only manual backdrop pick (e.g. show a car)
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -1423,6 +1429,21 @@ const rgba=(o,a)=>`rgba(${o.r},${o.g},${o.b},${a})`;
 function lum(o){return (0.299*o.r+0.587*o.g+0.114*o.b)/255;}
 
 function bgMemories(){return entries.filter(e=>e.type==='memories'&&e.bg&&e.imgs&&e.imgs.length);}
+function carMemories(){return entries.filter(e=>e.type==='memories'&&e.carBg&&e.imgs&&e.imgs.length);}
+// the memory + image currently shown as the backdrop (manual override wins over the daily pick)
+function shownBgMemory(){
+  if(homeBgOverride){const m=entries.find(x=>x.id===homeBgOverride.id);if(m&&m.imgs&&m.imgs.length)return {mem:m,src:homeBgOverride.src||m.imgs[0]};homeBgOverride=null;}
+  const d=dailyBgMemory();return d?{mem:d,src:d.bgImg||d.imgs[0]}:null;
+}
+function cycleCarBg(){
+  const cars=carMemories();
+  if(!cars.length){showToast('Mark a car photo first — tap 🚗 on a memory.','',null);return;}
+  _carIdx=(homeBgOverride&&homeBgOverride.car)?(_carIdx+1)%cars.length:0;
+  const m=cars[_carIdx];
+  homeBgOverride={id:m.id,src:m.carBgImg||m.bgImg||m.imgs[0],car:true};
+  applyJournalTheme();renderHome();
+}
+function clearHomeBg(){homeBgOverride=null;applyJournalTheme();renderHome();}
 function starredQuotes(){return entries.filter(e=>e.type==='reflections'&&e.featured&&(e.text||'').trim());}
 const dayIndex=()=>Math.floor(Date.now()/864e5);
 function ensureThemes(cb){
@@ -1444,9 +1465,10 @@ function applyJournalTheme(){
   root.style.removeProperty('--accent');root.style.removeProperty('--accent-soft');
   const layer=$('bgLayer');
   if(current==='knowledge'){if(layer)layer.style.opacity='0';return;}
-  const mem=dailyBgMemory();
-  if(!mem){if(layer)layer.style.opacity='0';return;}
-  if(layer){layer.style.backgroundImage=`url(${disp(mem.bgImg||mem.imgs[0])})`;layer.style.opacity='1';}
+  const sb=shownBgMemory();
+  if(!sb){if(layer)layer.style.opacity='0';return;}
+  const mem=sb.mem;
+  if(layer){layer.style.backgroundImage=`url(${disp(sb.src)})`;layer.style.opacity='1';}
   if(mem.theme){
     const a=mem.theme.accent;
     root.style.setProperty('--accent',`rgb(${a.r},${a.g},${a.b})`);
@@ -1937,7 +1959,7 @@ function entryHTML(e,ro){
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
     const tint=e.theme?`style="--mtint:${rgba(e.theme.accent,0.16)};--mtint2:${rgba(e.theme.dom,0.10)}"`:'';
     const activeSrc=e.bg?(e.bgImg||e.imgs[0]):null;
-    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button></div>`;};
+    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button>${hero?`<button class="pm-car ${e.carBg?'on':''}" data-carbg="${e.id}" data-caridx="${idx}" title="${e.carBg?'car highlight — tap to remove':'mark as a car highlight (for the home 🚗 button)'}">🚗</button>`:''}</div>`;};
     const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map((src,i)=>shot(src,i+1,false)).join('')}</div>`:'';
     const tags=(e.tags||[]).map(tg=>`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`).join('');
     const apill=a?`<span class="areapill" style="background:${a.color}22;color:${a.color}">${esc(a.name)}</span>`:'';
@@ -2034,9 +2056,12 @@ function renderHome(){
   const toggle=`<div class="home-toggle"><button class="${homeMode==='dashboard'?'on':''}" data-hm="dashboard">Dashboard</button><button class="${homeMode==='journal'?'on':''}" data-hm="journal">Journal</button></div>`;
 
   const quoteEl=dq?`<div class="daily-quote"><div class="dq-text">${mdRender(dq.text)}</div></div>`:'';
-  // location caption for today's background image
-  const bgMem=dailyBgMemory();
+  // location caption for the current background image (manual pick or daily)
+  const sbNow=shownBgMemory();const bgMem=sbNow&&sbNow.mem;
   const bgCap=(bgMem&&bgMem.place)?`<div class="home-bgcap">📍 ${esc(bgMem.place)}${bgMem.when?' · '+bgMem.when.slice(0,4):''}</div>`:'';
+  // backdrop controls: show a car (cycles through your car highlights), and return to the daily pick
+  const hasCars=carMemories().length;
+  const bgControls=(hasCars||homeBgOverride)?`<div class="home-bgctrl">${hasCars?`<button id="carBtn" title="show one of your cars as the backdrop">🚗 Car</button>`:''}${homeBgOverride?`<button id="dailyBtn" title="back to the daily backdrop">↺ Daily</button>`:''}</div>`:'';
   // prominent featured (cycling) reflection for the journal
   const jfeat=dq?`<div class="jr-feature"><div class="jr-feature-mark">“</div><div class="jr-feature-text">${mdRender(dq.text)}</div>${dq.when?`<div class="jr-feature-meta">${relTime(dq.when)}</div>`:''}</div>`:'';
 
@@ -2050,6 +2075,7 @@ function renderHome(){
     const tgEl=tasksGoals.length?tasksGoals.map(e=>{const a=areaById(e.area);const fut=isFuture(e.when);return `<div class="home-row"><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span>${e.when?`<span class="rwhen ${fut?'future':''}">${relTime(e.when)}</span>`:''}</div>`;}).join(''):'<div class="none">Clear for now.</div>';
 
     $('view').innerHTML=`
+      ${bgControls}
       ${bgCap}
       ${jfeat}
       <div class="home-status">${sub}</div>
@@ -2068,10 +2094,13 @@ function renderHome(){
     $('view').querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{homeMode=b.dataset.hm;savePrefs();renderHome();});
     $('view').querySelectorAll('[data-open-mem]').forEach(b=>b.onclick=()=>{areaFilter=null;current='memories';render();});
     $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
+    if($('carBtn'))$('carBtn').onclick=cycleCarBg;
+    if($('dailyBtn'))$('dailyBtn').onclick=clearHomeBg;
     return;
   }
 
   $('view').innerHTML=`
+    ${bgControls}
     ${bgCap}
     ${quoteEl}
     <div class="home-status">${sub}</div>
@@ -2085,6 +2114,8 @@ function renderHome(){
   $('view').querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{homeMode=b.dataset.hm;savePrefs();renderHome();});
   $('view').querySelectorAll('.acard').forEach(c=>c.onclick=()=>{areaFilter=c.dataset.area;pursuitsActive=true;pursuitsSub='tasks';current='tasks';render();});
   $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
+  if($('carBtn'))$('carBtn').onclick=cycleCarBg;
+  if($('dailyBtn'))$('dailyBtn').onclick=clearHomeBg;
 }
 
 // ---------- TIMELINE ----------
@@ -2826,6 +2857,7 @@ function wireSection(){
   $('view').querySelectorAll('.imgs img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
   $('view').querySelectorAll('.pm-hero img, .pm-extra img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
   $('view').querySelectorAll('[data-bgid]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.bgid);if(!e)return;const src=e.imgs[+b.dataset.bgidx];if(!src)return;const wasActive=e.bg&&((e.bgImg||e.imgs[0])===src);if(wasActive){e.bg=false;e._mod=Date.now();await saveEntries();render();return;}e.bg=true;e.bgImg=src;e._mod=Date.now();extractPalette(disp(src),pal=>{if(pal)e.theme=pal;saveEntries();render();});});
+  $('view').querySelectorAll('[data-carbg]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.carbg);if(!e)return;e.carBg=!e.carBg;if(e.carBg)e.carBgImg=e.imgs[+b.dataset.caridx]||e.imgs[0];else delete e.carBgImg;e._mod=Date.now();await saveEntries();render();});
   $('view').querySelectorAll('[data-feat]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.feat);if(e){e.featured=!e.featured;await saveEntries();renderSection();}});
   if(previewOn)updatePreview();
 }
