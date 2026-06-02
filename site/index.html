@@ -93,7 +93,8 @@
   .optpanel select,.optpanel input[type=date],.optpanel .tagin{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 10px;font-size:13px;font-family:var(--sans);outline:none}
   .opt-acts{display:flex;gap:6px;margin-top:14px}
   .md-h{font-family:var(--serif);font-weight:500;margin:10px 0 4px;line-height:1.25}
-  h3.md-h{font-size:18px}h4.md-h{font-size:16px}h5.md-h{font-size:15px}h6.md-h{font-size:14px;color:var(--muted)}
+  h3.md-h{font-size:18px;color:var(--accent)}h4.md-h{font-size:16px;color:var(--accent);opacity:.85}h5.md-h{font-size:15px}h6.md-h{font-size:14px;color:var(--muted)}
+  .md mark,.text.md mark,.md-p mark,.md-h mark,li mark{background:var(--accent-soft);color:var(--ink);padding:0 .2em;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
   .md-p{margin:6px 0}
   .md-ul,.md-ol{margin:6px 0 6px 20px}
   .md-ul li,.md-ol li{margin:2px 0}
@@ -1287,7 +1288,18 @@ async function aiFormatNote(){
   const e=entries.find(x=>x.id===wsActiveId); if(!e||!((e.text||'').trim())){showToast('Open a note with some content to format.');return;}
   openFormatSuggest('loading');
   try{
-    const ans=await askAnthropic(`Reformat the following note into clean, readable Markdown WITHOUT changing the meaning or wording of its content — keep every fact and detail. Improve STRUCTURE only: use "## " headings where natural, "- " bullet lists, "1." numbered lists for steps/sequences, **bold** for key terms, drug names and critical values, and a Markdown table only when content is clearly tabular. Do not add new information or commentary. Output ONLY the reformatted Markdown, nothing else.\n\nNOTE TITLE: ${e.title||''}\n\nNOTE:\n${(e.text||'').slice(0,6000)}`,2000);
+    const ans=await askAnthropic(`Reformat and lightly copy-edit the following note into clean, readable, attractive Markdown.
+RULES:
+- PRESERVE the meaning and all facts. Do NOT add new information or commentary. Keep medical terms, abbreviations, drug names, dosages, numbers and units EXACTLY as written.
+- You MAY fix obvious spelling and grammar mistakes and tidy awkward phrasing for readability — but never change clinical meaning or "correct" intentional medical shorthand.
+- STRUCTURE: "## " for main sections, "### " for sub-sections; "- " bullet lists; "1." numbered lists for steps/sequences; a Markdown table only when content is clearly tabular.
+- EMPHASIS (used sparingly and consistently to make it pop): **bold** for key terms, drug names and critical values; ==highlight== for the single most important takeaway in a section.
+- Output ONLY the reformatted Markdown, nothing else.
+
+NOTE TITLE: ${e.title||''}
+
+NOTE:
+${(e.text||'').slice(0,6000)}`,2000);
     let out=(ans||'').replace(/^```(?:markdown)?\n?/,'').replace(/```$/,'').trim();
     if(!out){openFormatSuggest('error');return;}
     openFormatSuggest(out);
@@ -1298,7 +1310,7 @@ function openFormatSuggest(state){
   if(state==='loading'){m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Tidying the formatting…</div><div class="mfoot"><button id="fmClose" class="prim">Cancel</button></div>`;$('overlay').classList.add('open');$('fmClose').onclick=()=>$('overlay').classList.remove('open');return;}
   if(state==='error'){m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Could not format — check your connection and try again.</div><div class="mfoot"><button id="fmClose" class="prim">Done</button></div>`;$('overlay').classList.add('open');$('fmClose').onclick=()=>$('overlay').classList.remove('open');return;}
   _fmtPending=state;
-  m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Preview of the tidied note — your wording is kept, only the formatting changes.</div>
+  m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Preview: structure, color &amp; highlights added, plus light grammar/spelling cleanup. Medical terms, doses and your meaning are preserved — review before applying.</div>
     <div class="text md" style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0;background:var(--bg)">${mdRender(state)}</div>
     <div class="mfoot"><button id="fmCancel" style="margin-right:auto;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)">Keep original</button><button id="fmApply" class="prim">Apply formatting</button></div>`;
   $('overlay').classList.add('open');
