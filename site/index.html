@@ -215,6 +215,7 @@
   .jr-feature-text{font-family:var(--serif);font-size:30px;line-height:1.45;color:var(--ink);font-style:italic}
   .jr-feature-text p{margin:0}
   .jr-feature-meta{margin-top:14px;font-size:13px;color:var(--muted);font-family:var(--sans)}
+  .jr-feature-badge{font-size:11px;color:var(--accent);font-family:var(--sans);letter-spacing:.04em;margin-bottom:6px}
   @media(max-width:560px){.jr-feature-text{font-size:23px}.jr-feature{padding:22px 16px}}
   .home-status{text-align:center;font-size:13.5px;color:var(--muted);margin:0 0 26px}
   .entry .acts .feat{color:var(--faint)}
@@ -830,7 +831,7 @@ let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, moo
 let entries=[], areas=[], ready=false, carRecords=[], learnList=[], notePalette='terracotta';
 let homeBgOverride=null, _carIdx=0; // session-only manual backdrop pick (e.g. show a car)
 // custom car icon — stylized tanzanite-blue sport sedan (BMW G80 M3), used for car button/records
-const CAR_ICON=`<svg class="caricon" viewBox="0 0 100 46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 31 Q5 26 11 25 L24 24 Q30 14 41 14 L58 14 Q69 14 76 23 L91 27 Q96 28 96 32 L96 34 Q96 36 93 36 L9 36 Q5 36 5 32 Z" fill="#27365a"/><path d="M28 23 Q33 17 41 17 L56 17 Q64 17 69 23 Z" fill="#aac4e2"/><path d="M9 33 L92 33" stroke="#3a4e7a" stroke-width="1.4"/><circle cx="29" cy="36" r="7.5" fill="#141b2c"/><circle cx="29" cy="36" r="3" fill="#6f8099"/><circle cx="73" cy="36" r="7.5" fill="#141b2c"/><circle cx="73" cy="36" r="3" fill="#6f8099"/></svg>`;
+const CAR_ICON=`<svg class="caricon" viewBox="0 0 96 84" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M34 12 Q38 9 48 9 Q58 9 62 12 L70 31 L26 31 Z" fill="#1b2640"/><path d="M14 70 Q8 36 26 30 L70 30 Q88 36 82 70 Q82 74 76 74 L20 74 Q14 74 14 70 Z" fill="#2b3c61"/><path d="M30 31 Q30 44 26 56" stroke="#3a4e78" stroke-width="1.1" fill="none"/><path d="M66 31 Q66 44 70 56" stroke="#3a4e78" stroke-width="1.1" fill="none"/><path d="M20 39 L37 41 L35 46 L20 45 Z" fill="#c2d6ef"/><path d="M76 39 L59 41 L61 46 L76 45 Z" fill="#c2d6ef"/><rect x="40" y="36" width="7.4" height="30" rx="3" fill="#10151f"/><rect x="48.6" y="36" width="7.4" height="30" rx="3" fill="#10151f"/><circle cx="48" cy="33" r="5" fill="#0c1422" stroke="#dfe7f2" stroke-width="1"/><path d="M48 28 A5 5 0 0 1 53 33 L48 33 Z" fill="#4a82c4"/><path d="M48 38 A5 5 0 0 1 43 33 L48 33 Z" fill="#4a82c4"/><path d="M18 66 L32 66 L30 71 L19 71 Z" fill="#10151f"/><path d="M78 66 L64 66 L66 71 L77 71 Z" fill="#10151f"/></svg>`;
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -2070,14 +2071,15 @@ function renderHome(){
   // backdrop controls: show a car (cycles through your car highlights), and return to the daily pick
   const hasCars=carMemories().length;
   const bgControls=(hasCars||homeBgOverride)?`<div class="home-bgctrl">${hasCars?`<button id="carBtn" title="show one of your cars as the backdrop">${CAR_ICON} Car</button>`:''}${homeBgOverride?`<button id="dailyBtn" title="back to the daily backdrop">↺ Daily</button>`:''}</div>`:'';
-  // prominent featured (cycling) reflection for the journal
-  const jfeat=dq?`<div class="jr-feature"><div class="jr-feature-mark">“</div><div class="jr-feature-text">${mdRender(dq.text)}</div>${dq.when?`<div class="jr-feature-meta">${relTime(dq.when)}</div>`:''}</div>`:'';
+  // prominent featured (cycling) reflection for the journal — falls back to the latest reflection if none is starred
+  const featRef=dq||entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created))[0];
+  const jfeat=featRef?`<div class="jr-feature">${featRef.featured?'<div class="jr-feature-badge">★ featured</div>':''}<div class="jr-feature-mark">“</div><div class="jr-feature-text">${mdRender(featRef.text)}</div>${featRef.when?`<div class="jr-feature-meta">${relTime(featRef.when)}</div>`:''}</div>`:'';
 
   if(homeMode==='journal'){
     // recent photo memories for a gallery strip
     const photoMems=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,4);
     const strip=photoMems.length?`<div class="jr-strip">${photoMems.map(m=>`<button class="jr-photo" data-open-mem="${m.id}" style="background-image:url(${disp(m.imgs[0])})"><span class="jr-photo-cap">${esc((m.text||'').slice(0,40))}</span></button>`).join('')}</div>`:'';
-    const recentRefs=entries.filter(e=>e.type==='reflections').sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,2);
+    const recentRefs=entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()&&!(featRef&&e.id===featRef.id)).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,2);
     const refsEl=recentRefs.length?recentRefs.map(r=>`<div class="jr-reflection">${mdRender(r.text.slice(0,400))}${r.text.length>400?'…':''}<div class="jr-rdate">${r.when?relTime(r.when):''}</div></div>`).join(''):'<div class="none">No reflections yet.</div>';
     const tasksGoals=entries.filter(e=>(e.type==='tasks'||e.type==='goals')&&!e.done).sort((a,b)=>(a.when||'9999')<(b.when||'9999')?-1:1).slice(0,6);
     const tgEl=tasksGoals.length?tasksGoals.map(e=>{const a=areaById(e.area);const fut=isFuture(e.when);return `<div class="home-row"><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span>${e.when?`<span class="rwhen ${fut?'future':''}">${relTime(e.when)}</span>`:''}</div>`;}).join(''):'<div class="none">Clear for now.</div>';
