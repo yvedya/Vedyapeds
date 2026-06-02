@@ -147,6 +147,9 @@
   .entry:hover{border-color:var(--faint)}
   .entry .check{flex-shrink:0;width:20px;height:20px;border:1.5px solid var(--faint);border-radius:50%;cursor:pointer;margin-top:2px;transition:.15s;display:flex;align-items:center;justify-content:center}
   .entry .check.ro{pointer-events:none;cursor:default}
+  .log-know{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;font-size:14px;color:var(--ink);cursor:pointer}
+  .log-know b{font-weight:600}
+  .log-know:hover{border-color:var(--faint)}
   .entry .check:hover{border-color:var(--accent)}
   .entry.done .check{background:var(--accent);border-color:var(--accent)}
   .entry .check svg{opacity:0;transition:.15s;width:11px;height:11px}
@@ -2590,13 +2593,17 @@ async function detectStudyProgress(text){
 // Which calendar day an entry belongs to in the Log (null = it shouldn't appear).
 // The Log is a RECORD of what happened: unfinished to-do tasks are hidden; a completed
 // task surfaces automatically on the day it was completed.
+// local YYYY-MM-DD for an ISO timestamp (created/updated are stored in UTC; slicing them
+// gave the UTC date, which is a day ahead for evening US entries — hence the date bug)
+function localDay(iso){if(!iso)return '';const d=new Date(iso);if(isNaN(d))return (''+iso).slice(0,10);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function logDate(e){
   if(e.type==='tasks'){
     if(e.every)return e.lastDone||null;                    // recurring chore: the day it was last done
     if(!e.done)return null;                                // unfinished to-do: never shows in the log
-    return e.doneAt||e.when||(e.created||'').slice(0,10);  // completed: the day it was completed
+    return e.doneAt||e.when||localDay(e.created);          // completed: the day it was completed
   }
-  return e.when||(e.created||'').slice(0,10);
+  if(e.type==='knowledge')return e.when||localDay(e.updated||e.created); // the day it was last worked on
+  return e.when||localDay(e.created);
 }
 function renderLogs(){
   const viewToggle=`<div class="log-viewtog"><button class="${logView==='day'?'on':''}" data-logview="day">Day</button><button class="${logView==='timeline'?'on':''}" data-logview="timeline">Timeline</button><button class="${logView==='calendar'?'on':''}" data-logview="calendar">Calendar</button></div>`;
@@ -2654,7 +2661,10 @@ function renderLogs(){
     <button id="logNext" ${logDayOffset>=0?'disabled':''} title="next day">›</button>
   </div>`;
 
-  const list=dayEntries.length?`<div class="list">${dayEntries.map(e=>entryHTML(e,true)).join('')}</div>`
+  const logRow=e=>e.type==='knowledge'
+    ? `<div class="log-know" data-go-know="${e.id}">✎ Worked on <b>${esc(e.title||(e.text||'').slice(0,40)||'a note')}</b>${e.subject?` · <span style="color:var(--muted)">${esc(e.subject)}</span>`:''}</div>`
+    : entryHTML(e,true);
+  const list=dayEntries.length?`<div class="list">${dayEntries.map(logRow).join('')}</div>`
     :`<div class="empty"><div class="mark">·</div><p>Nothing logged for ${dayLabel.toLowerCase()} yet.</p></div>`;
 
   $('view').innerHTML=viewToggle+areaStripHTML()+composer+dayNav+list;
@@ -2662,6 +2672,7 @@ function renderLogs(){
   $('view').querySelectorAll('[data-logview]').forEach(b=>b.onclick=()=>{logView=b.dataset.logview;renderLogs();});
   // standard entry wiring (edit/del/etc reuse section wiring helpers); checks here are read-only (the Log is a record)
   $('view').querySelectorAll('.check:not(.ro)').forEach(c=>c.onclick=()=>toggle(c.dataset.id));
+  $('view').querySelectorAll('[data-go-know]').forEach(b=>b.onclick=()=>gotoEntry(b.dataset.goKnow));
   $('view').querySelectorAll('.edit').forEach(b=>b.onclick=()=>startEdit(b.dataset.edit));
   $('view').querySelectorAll('.del').forEach(b=>b.onclick=()=>remove(b.dataset.del));
   $('view').querySelectorAll('.mv').forEach(b=>b.onclick=ev=>{ev.stopPropagation();menuOpen=menuOpen===b.dataset.mv?null:b.dataset.mv;renderLogs();});
