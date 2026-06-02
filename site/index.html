@@ -246,6 +246,21 @@
   .learn-acts button:hover{color:var(--ink);border-color:var(--faint)}
   .ws-empty-sm{font-size:14px;color:var(--muted);padding:24px 4px;font-style:italic;line-height:1.5}
 
+  /* study focus timer */
+  .ws-focusbtn{margin-top:8px;width:100%;border:1px solid var(--line);background:var(--bg);color:var(--accent);border-radius:9px;padding:9px;font-size:13px;font-family:var(--sans);cursor:pointer;font-weight:600}
+  .ws-focusbtn.running{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .study-time{font-size:12.5px;color:var(--muted);margin-top:4px}
+  .study-time b{color:var(--ink)}
+  #focusBar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:7000;display:flex;align-items:center;gap:10px;background:var(--accent);color:#fff;padding:8px 14px;border-radius:999px;box-shadow:0 6px 22px rgba(0,0,0,.25);font-family:var(--sans);font-size:14px}
+  #focusBar .fb-dot{width:8px;height:8px;border-radius:50%;background:#fff;animation:fbpulse 1.6s infinite}
+  @keyframes fbpulse{0%,100%{opacity:1}50%{opacity:.3}}
+  #focusBar .fb-label{font-size:13px;opacity:.9}
+  #focusBar .fb-time{font-variant-numeric:tabular-nums;font-weight:700;min-width:56px;text-align:center}
+  #focusBar .fb-stop{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px;font-weight:600}
+  #focusBar .fb-stop:hover{background:rgba(255,255,255,.34)}
+  body.focusing nav,body.focusing #acctBar,body.focusing #micBtn{opacity:.25;transition:opacity .3s}
+  body.focusing nav:hover,body.focusing #acctBar:hover{opacity:1}
+
   /* timeline */
   .tl-month{font-family:var(--serif);font-size:15px;color:var(--muted);margin:22px 4px 10px}
   .tl-month:first-child{margin-top:0}
@@ -2104,13 +2119,54 @@ function openWellnessHistory(trackId){
   $('whClose').onclick=()=>{$('overlay').classList.remove('open');renderWellness();};
 }
 
+// ---- Study focus timer: start -> focus mode -> stop logs the minutes into the Log (tagged 'study') ----
+let studyTimerStart=null,_studyTick=null;
+function fmtDur(mins){mins=Math.max(0,Math.round(mins));if(mins<60)return mins+'m';const h=Math.floor(mins/60),m=mins%60;return h+'h'+(m?' '+m+'m':'');}
+function studyElapsedMs(){return studyTimerStart?Date.now()-studyTimerStart:0;}
+function studyElapsedStr(){const s=Math.floor(studyElapsedMs()/1000),h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=s%60,mm=String(m).padStart(2,'0'),sss=String(ss).padStart(2,'0');return h?(h+':'+mm+':'+sss):(m+':'+sss);}
+function studyMinSince(dateISO){return entries.filter(e=>e.type==='logs'&&(e.tags||[]).includes('study')&&typeof e.studyMins==='number'&&(e.when||(e.created||'').slice(0,10))>=dateISO).reduce((a,e)=>a+e.studyMins,0);}
+function renderFocusBar(){
+  let bar=document.getElementById('focusBar');
+  if(!studyTimerStart){if(bar)bar.remove();document.body.classList.remove('focusing');return;}
+  if(!bar){bar=document.createElement('div');bar.id='focusBar';
+    bar.innerHTML=`<span class="fb-dot"></span><span class="fb-label">Focusing</span><span id="fbTime" class="fb-time">0:00</span><button id="fbStop" class="fb-stop">■ Stop</button>`;
+    document.body.appendChild(bar);document.getElementById('fbStop').onclick=()=>stopStudyTimer();}
+  document.body.classList.add('focusing');
+  const t=document.getElementById('fbTime');if(t)t.textContent=studyElapsedStr();
+}
+function startStudyTimer(){
+  studyTimerStart=Date.now();try{localStorage.setItem('repo:studytimer',String(studyTimerStart));}catch(e){}
+  renderFocusBar();clearInterval(_studyTick);_studyTick=setInterval(renderFocusBar,1000);
+  if(current==='knowledge')renderWorkspace();else if(current==='study')renderStudy();
+}
+async function stopStudyTimer(){
+  if(!studyTimerStart)return;
+  const mins=Math.round(studyElapsedMs()/60000);
+  clearInterval(_studyTick);_studyTick=null;studyTimerStart=null;try{localStorage.removeItem('repo:studytimer');}catch(e){}
+  renderFocusBar();
+  if(mins>=1){
+    const note=entries.find(x=>x.id===wsActiveId);
+    const area=(note&&note.area)||(areas[0]||{}).id;const label=note&&note.title?note.title:'';
+    entries.push({id:uid(),type:'logs',area,title:null,text:`📚 Studied ${fmtDur(mins)}${label?' — '+label:''}`,source:null,meta:null,tags:['study'],studyMins:mins,when:todayISO(),imgs:[],links:[],done:false,created:new Date().toISOString(),_mod:Date.now()});
+    await saveEntries();showToast(`Logged ${fmtDur(mins)} of study 📚`,'',null);
+  }else{showToast('Under a minute — not logged','',null);}
+  if(current==='knowledge')renderWorkspace();else if(current==='study')renderStudy();else render();
+}
+function toggleStudyTimer(){if(studyTimerStart)stopStudyTimer();else startStudyTimer();}
+function resumeStudyTimer(){try{const v=localStorage.getItem('repo:studytimer');if(v){const t=parseInt(v,10);if(t&&Date.now()-t<86400000){studyTimerStart=t;renderFocusBar();clearInterval(_studyTick);_studyTick=setInterval(renderFocusBar,1000);}else{localStorage.removeItem('repo:studytimer');}}}catch(e){}}
 function renderStudy(){
   const streak=studyStreak();
+  const wkISO=new Date(Date.now()-6*864e5).toISOString().slice(0,10);
+  const todayMin=studyMinSince(todayISO()),weekMin=studyMinSince(wkISO);
   const areaOpts=areas.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
 
   const header=`<div class="study-head">
-    <div class="study-streak"><span class="ss-num">${streak}</span><span class="ss-lbl">day study streak${streak?' 🔥':''}</span></div>
-    <button class="add" id="studyAdd">＋ Add source</button>
+    <div class="study-streak"><span class="ss-num">${streak}</span><span class="ss-lbl">day study streak${streak?' 🔥':''}</span>
+      <div class="study-time">Studied today <b>${fmtDur(todayMin)}</b> · last 7 days <b>${fmtDur(weekMin)}</b></div></div>
+    <div style="display:flex;gap:8px">
+      <button class="add" id="studyFocus" style="${studyTimerStart?'background:var(--accent);color:#fff':''}">${studyTimerStart?'■ Stop ('+fmtDur(studyElapsedMs()/60000)+')':'▶ Focus timer'}</button>
+      <button class="add" id="studyAdd">＋ Add source</button>
+    </div>
   </div>`;
 
   const roll=ankiRollup();
@@ -2167,6 +2223,7 @@ function renderStudy(){
 }
 function wireStudy(){
   if($('studyAdd'))$('studyAdd').onclick=()=>openStudyEditor(null);
+  if($('studyFocus'))$('studyFocus').onclick=()=>toggleStudyTimer();
   $('view').querySelectorAll('[data-sedit]').forEach(b=>b.onclick=()=>openStudyEditor(b.dataset.sedit));
   $('view').querySelectorAll('[data-sdel]').forEach(b=>b.onclick=async()=>{if(confirm('Delete this study source?')){studySources=studySources.filter(s=>s.id!==b.dataset.sdel);await saveStudy();renderStudy();}});
   $('view').querySelectorAll('[data-splus]').forEach(b=>b.onclick=()=>bumpStudy(b.dataset.splus,1));
@@ -2722,6 +2779,7 @@ function renderWorkspace(){
   const sidebar=`<aside class="ws-side ${wsSidebar?'':'hidden'}">
     <div class="ws-side-top">
       <button class="ws-back" id="wsBack">← Repository</button>
+      <button class="ws-focusbtn ${studyTimerStart?'running':''}" id="wsFocus">${studyTimerStart?'■ Stop study timer':'▶ Start focus timer'}</button>
     </div>
     <div class="ws-viewtog">
       <button class="ws-vt ${wsView==='notes'?'on':''}" data-wsview="notes">Notes</button>
@@ -2881,6 +2939,7 @@ function wireWorkspace(){
   if($('wsBack'))$('wsBack').onclick=()=>{flushWsSave();wsStudyFilter=null;current='home';render();};
   if($('wsClearStudy'))$('wsClearStudy').onclick=()=>{wsStudyFilter=null;renderWorkspace();};
   if($('wsToggleSide'))$('wsToggleSide').onclick=()=>{wsSidebar=!wsSidebar;renderWorkspace();};
+  if($('wsFocus'))$('wsFocus').onclick=()=>toggleStudyTimer();
   if($('wsSearchIn'))$('wsSearchIn').oninput=e=>{wsSearch=e.target.value;const p=e.target.selectionStart;renderWorkspace();const n=$('wsSearchIn');if(n){n.focus();n.setSelectionRange(p,p);}};
   ws.querySelectorAll('[data-wsview]').forEach(b=>b.onclick=()=>{flushWsSave();wsView=b.dataset.wsview;wsReviewReveal=false;renderWorkspace();});
   if($('wsReveal'))$('wsReveal').onclick=()=>{wsReviewReveal=true;renderWorkspace();};
@@ -3479,6 +3538,7 @@ async function _startApp(){
   render(); await load(); render(); ensureThemes(()=>render());
   updateOfflineUI(); _syncDirty().then(updateOfflineUI);
   _resetIdle();
+  resumeStudyTimer();
 }
 window.__signOut=async()=>{ try{ await _sb.auth.signOut(); }catch(e){} location.reload(); };
 window.__changePw=async()=>{
