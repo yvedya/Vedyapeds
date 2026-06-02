@@ -1723,7 +1723,27 @@ async function generateCloze(title,text){
     const res=await fetch("/.netlify/functions/anthropic",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:900,
-        messages:[{role:"user",content:`Create Anki cloze-deletion flashcards from this study note. Each card is a sentence with one or more important terms hidden using Anki cloze syntax: {{c1::hidden term}}, {{c2::another}} etc. Make the hidden parts the key testable facts (terms, values, mechanisms). Aim for 3-8 focused cards. Keep each card a single clear sentence. Reply with ONLY a JSON array of strings, each string one cloze card. No other text.\n\nTitle: ${title||'(none)'}\nNote: ${(text||'').slice(0,2500)}`}]})
+        messages:[{role:"user",content:`Create Anki cloze-deletion flashcards from this study note. Quality over quantity — follow these rules exactly:
+
+HOW CLOZE NUMBERS WORK: deletions that SHARE a number (e.g. two {{c1::...}}) are hidden and revealed TOGETHER on ONE card. Each DISTINCT number ({{c1}}, {{c2}}…) makes a SEPARATE card from that sentence.
+
+RULES:
+1. Be SELECTIVE. Only hide the PRIMARY facts truly worth actively recalling. Leave the subject/cue, framing, and secondary or explanatory details as plain visible text — reading them is part of the learning.
+2. GROUP a set or list that should be recalled together under the SAME number → one card that reveals all of them at once. Do NOT give each list item its own number.
+3. Use SEPARATE numbers only for facts that each genuinely deserve their own card (e.g. first-line vs second-line treatment).
+4. Never cloze the topic/term that is serving as the cue for the fact.
+5. Prefer FEWER, higher-value cards (often ~2-5 for a typical note). Each array item is its own card; restart numbering at c1 for each.
+
+EXAMPLES (note the intent):
+- One card, the 3 risk groups recalled together (the syndrome is the cue, left visible):
+  "Dialysis disequilibrium syndrome is most commonly seen in {{c1::first hemodialysis treatment}}, {{c1::young children}}, and patients with {{c1::high BUN}} before dialysis initiation."
+- Two cards (first-line vs second-line are distinct), with the secondary idea "dialysis can continue" left as visible context:
+  "{{c1::Sodium remodeling}} (changing the sodium dialysate bath) is a specific intervention for DDS that allows dialysis to continue, while {{c2::hypertonic saline}} can be considered if sodium remodeling is insufficient."
+
+Reply with ONLY a JSON array of strings, each string one cloze card. No other text.
+
+Title: ${title||'(none)'}
+Note: ${(text||'').slice(0,2500)}`}]})
     });
     const data=await res.json();let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim().replace(/```json|```/g,'').trim();
     const arr=JSON.parse(t);
