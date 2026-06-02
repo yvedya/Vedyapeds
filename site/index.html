@@ -98,8 +98,8 @@
   h5.md-h{font-size:12.5px;color:var(--note-h3);font-family:var(--sans);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:13px}
   h6.md-h{font-size:13px;color:var(--muted)}
   .md mark,.text.md mark,.md-p mark,.md-h mark,li mark{background:var(--note-mark-bg);color:var(--note-mark-fg);padding:0 .22em;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
-  :root{--note-h1:#2563eb;--note-h2:#7c3aed;--note-h3:#64748b;--note-mark-bg:#fde68a;--note-mark-fg:#5c3b00}
-  html.dark{--note-h1:#6ea8ff;--note-h2:#c4b5fd;--note-h3:#94a3b8;--note-mark-bg:rgba(250,204,21,.24);--note-mark-fg:#fde68a}
+  :root{--note-h1:#bf4e30;--note-h2:#0f766e;--note-h3:#64748b;--note-mark-bg:#fde68a;--note-mark-fg:#5c3b00}
+  html.dark{--note-h1:#e8836a;--note-h2:#5ec8bd;--note-h3:#94a3b8;--note-mark-bg:rgba(250,204,21,.24);--note-mark-fg:#fde68a}
   .md-p{margin:6px 0}
   .md-ul,.md-ol{margin:6px 0 6px 20px}
   .md-ul li,.md-ol li{margin:2px 0}
@@ -812,7 +812,7 @@ let homeMode='dashboard'; // 'dashboard' | 'journal'
 let logDraft='', logProposed=null, logBusy=false, logDayOffset=0, logView='day', calMonthOffset=0;
 let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
-let entries=[], areas=[], ready=false, carRecords=[], learnList=[];
+let entries=[], areas=[], ready=false, carRecords=[], learnList=[], notePalette='terracotta';
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -834,15 +834,15 @@ async function load(){
   if(!areas.length)areas=DEFAULT_AREAS.slice();
   try{const s=await window.storage.get('repo:study');studySources=s&&s.value?JSON.parse(s.value):[];}catch(e){studySources=[];}
   try{const w=await window.storage.get('repo:wellness');wellnessLog=w&&w.value?JSON.parse(w.value):{};}catch(e){wellnessLog={};}
-  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';dietGoal=pr.dietGoal||'';}}catch(e){}
-  applyTheme();setupMic();
+  try{const p=await window.storage.get('repo:prefs');if(p&&p.value){const pr=JSON.parse(p.value);homeMode=pr.homeMode||'dashboard';wsFontScale=pr.wsFontScale||1;theme=pr.theme||'light';dietGoal=pr.dietGoal||'';notePalette=pr.notePalette||'terracotta';}}catch(e){}
+  applyTheme();applyNotePalette(notePalette);setupMic();
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{const c=await window.storage.get('repo:car');carRecords=c&&c.value?JSON.parse(c.value):[];}catch(e){carRecords=[];}
   try{const ll=await window.storage.get('repo:tolearn');learnList=ll&&ll.value?JSON.parse(ll.value):[];}catch(e){learnList=[];}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
-async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme,dietGoal}));}catch(e){}}
+async function savePrefs(){try{await window.storage.set('repo:prefs',JSON.stringify({homeMode,wsFontScale,theme,dietGoal,notePalette}));}catch(e){}}
 function applyTheme(){document.documentElement.classList.toggle('dark',theme==='dark');const b=$('themeBtn');if(b)b.textContent=theme==='dark'?'☀':'☾';}
 window.__toggleTheme=()=>{theme=theme==='dark'?'light':'dark';applyTheme();savePrefs();};
 // ---- Voice capture (browser speech-to-text, free) ----
@@ -1052,6 +1052,7 @@ function openMenu(){
     {label:'✦  Ask / review my week', fn:'__openAI'},
     {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
     {label:'🚗  Car records', fn:'__openCarRecords'},
+    {label:'🎨  Note colors', fn:'__openNotePalette'},
     {label:'📝  Feedback & ideas', fn:'__openFeedback'},
     {label:'🔍  Search everything', fn:'__openSearch'},
     {label:'🗑  Trash', fn:'__openTrash'},
@@ -1065,6 +1066,36 @@ function openMenu(){
   $('menuClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openMenu=openMenu;
+// ---- Note color palettes (headings + highlight); live-switchable, persisted in prefs ----
+const NOTE_PALETTES={
+  terracotta:{name:'Terracotta & Teal',light:{h1:'#bf4e30',h2:'#0f766e',h3:'#64748b',mb:'#fde68a',mf:'#5c3b00'},dark:{h1:'#e8836a',h2:'#5ec8bd',h3:'#94a3b8',mb:'rgba(250,204,21,.24)',mf:'#fde68a'}},
+  burgundy:{name:'Burgundy & Gold',light:{h1:'#9b2c4a',h2:'#9a7211',h3:'#6b6256',mb:'#f6e3b0',mf:'#5c3b00'},dark:{h1:'#e4869c',h2:'#d8b24a',h3:'#a8a08f',mb:'rgba(216,178,74,.24)',mf:'#f3dca0'}},
+  espresso:{name:'Espresso & Rust',light:{h1:'#4a3b2f',h2:'#c1532d',h3:'#8a8070',mb:'#fde68a',mf:'#5c3b00'},dark:{h1:'#d8c3aa',h2:'#e0875c',h3:'#a8a090',mb:'rgba(250,204,21,.22)',mf:'#fde68a'}},
+  classic:{name:'Blue & Purple',light:{h1:'#2563eb',h2:'#7c3aed',h3:'#64748b',mb:'#fde68a',mf:'#5c3b00'},dark:{h1:'#6ea8ff',h2:'#c4b5fd',h3:'#94a3b8',mb:'rgba(250,204,21,.24)',mf:'#fde68a'}}
+};
+function applyNotePalette(id){
+  const p=NOTE_PALETTES[id]||NOTE_PALETTES.terracotta;
+  let st=document.getElementById('notePaletteStyle');
+  if(!st){st=document.createElement('style');st.id='notePaletteStyle';document.head.appendChild(st);}
+  const v=o=>`--note-h1:${o.h1};--note-h2:${o.h2};--note-h3:${o.h3};--note-mark-bg:${o.mb};--note-mark-fg:${o.mf}`;
+  st.textContent=`:root{${v(p.light)}} html.dark{${v(p.dark)}}`;
+}
+function openNotePalette(){
+  const m=$('modal');
+  const sample=`# Note title\n## Section heading\nA key point with a **bold term** and ==an important highlight==.\n### Sub-section`;
+  const rows=Object.entries(NOTE_PALETTES).map(([k,p])=>{
+    const dots=[p.light.h1,p.light.h2,p.light.h3].map(c=>`<span style="width:14px;height:14px;border-radius:50%;background:${c};display:inline-block"></span>`).join('')+`<span style="width:22px;height:14px;border-radius:3px;background:${p.light.mb};display:inline-block"></span>`;
+    return `<button data-pal="${k}" style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:1px solid ${notePalette===k?'var(--accent)':'var(--line)'};background:var(--bg);border-radius:10px;padding:11px 13px;cursor:pointer;margin-bottom:8px;color:var(--ink);font-size:14px"><span>${esc(p.name)}${notePalette===k?' &nbsp;✓':''}</span><span style="display:inline-flex;gap:5px;align-items:center">${dots}</span></button>`;
+  }).join('');
+  m.innerHTML=`<h3>🎨 Note colors</h3><div class="msub">Pick a palette for note headings &amp; highlights — tap one to preview it live below, then Done.</div>
+    ${rows}
+    <div class="text md" style="border:1px solid var(--line);border-radius:10px;padding:12px 16px;margin-top:6px;background:var(--bg)">${mdRender(sample)}</div>
+    <div class="mfoot"><button id="palClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  m.querySelectorAll('[data-pal]').forEach(b=>b.onclick=()=>{notePalette=b.dataset.pal;applyNotePalette(notePalette);savePrefs();openNotePalette();});
+  $('palClose').onclick=()=>{$('overlay').classList.remove('open');if(current==='knowledge')renderWorkspace();else render();};
+}
+window.__openNotePalette=openNotePalette;
 // ---- Feedback / ideas repository (saved to Supabase; fetchable by Claude via the feedback function) ----
 let feedback=null;
 async function loadFeedback(){try{const r=await window.storage.get('repo:feedback');feedback=r?JSON.parse(r):[];}catch(e){feedback=[];}return feedback;}
