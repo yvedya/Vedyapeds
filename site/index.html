@@ -481,10 +481,13 @@
   }
 
   /* background layer */
-  #bgLayer{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;opacity:0;transition:opacity 1.2s;
+  #bgLayer{position:fixed;inset:0;z-index:-2;background-size:cover;background-position:center;opacity:0;transition:opacity 1.2s;
     filter:saturate(.9)}
   #bgLayer::after{content:'';position:absolute;inset:0;background:var(--bg);opacity:.86}
   body.ws-mode #bgLayer{opacity:0!important}
+  /* soft scrim so the date/nav/quote stay legible over any backdrop photo */
+  #topScrim{position:fixed;top:0;left:0;right:0;height:230px;z-index:-1;pointer-events:none;background:linear-gradient(var(--bg),rgba(0,0,0,0))}
+  body.ws-mode #topScrim{display:none}
 
   /* nav: knowledge rightmost, distinct */
   .nav-sep{flex:1;min-width:8px}
@@ -779,7 +782,7 @@
 <div id="toast" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:6000;background:#1f1d1a;color:#fff;padding:10px 16px;border-radius:10px;font-family:'Inter',sans-serif;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.22);align-items:center;gap:14px;"><span id="toastMsg"></span><button id="toastAction" style="background:none;border:none;color:#9ec7a4;font-weight:600;cursor:pointer;font-size:13px;padding:0;">Undo</button></div>
 <button id="micBtn" title="Dictate into the text box you're typing in" style="display:none;position:fixed;bottom:16px;right:16px;z-index:5500;width:48px;height:48px;border-radius:50%;border:none;background:var(--accent);color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2);align-items:center;justify-content:center;">🎤</button>
 <div id="offlineBar" style="display:none;position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6000;background:#8a6d3b;color:#fff;padding:5px 12px;border-radius:8px;font-family:'Inter',sans-serif;font-size:12px;box-shadow:0 3px 12px rgba(0,0,0,.18)"></div>
-<div id="bgLayer"></div>
+<div id="bgLayer"></div><div id="topScrim"></div>
 <div class="app" id="journalApp">
   <header>
     <div class="date" id="homeLink"></div>
@@ -1068,22 +1071,33 @@ window.__openSearch=openSearch;
 // ---- Consolidated menu (declutters the bottom bar) ----
 function openMenu(){
   const m=$('modal');
-  const items=[
-    {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
-    {label:'✦  Ask / review my week', fn:'__openAI'},
-    {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
-    {label:CAR_ICON+'  Car records', fn:'__openCarRecords'},
-    {label:'🎨  Note colors', fn:'__openNotePalette'},
-    {label:'📝  Feedback & ideas', fn:'__openFeedback'},
-    {label:'🔍  Search everything', fn:'__openSearch'},
-    {label:'🗑  Trash', fn:'__openTrash'},
-    {label:'⬇  Backup & restore', fn:'__openBackup'},
-    {label:'🔑  Change password', fn:'__changePw'},
-    {label:'↩  Sign out', fn:'__signOut'}
+  const groups=[
+    {h:'Tools',items:[
+      {label:'✦  Ask / review my week', fn:'__openAI'},
+      {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
+      {label:'🔍  Search everything', fn:'__openSearch'},
+      {label:'🎨  Note colors', fn:'__openNotePalette'},
+      {label:CAR_ICON+'  Car records', fn:'__openCarRecords'},
+    ]},
+    {h:'Share & feedback',items:[
+      {label:'📣  Friend update', fn:'__openFriendShare'},
+      {label:'📝  Feedback & ideas', fn:'__openFeedback'},
+    ]},
+    {h:'Your data',items:[
+      {label:'🗑  Trash', fn:'__openTrash'},
+      {label:'⬇  Backup & restore', fn:'__openBackup'},
+    ]},
+    {h:'Account',items:[
+      {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
+      {label:'🔑  Change password', fn:'__changePw'},
+      {label:'↩  Sign out', fn:'__signOut'},
+    ]},
   ];
-  m.innerHTML=`<h3>Menu</h3><div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">${items.map((it,i)=>`<button data-mi="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px">${it.label}</button>`).join('')}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
+  const flat=[];const bs="display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px;width:100%";
+  const body=groups.map(g=>`<div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 2px 7px">${g.h}</div><div style="display:flex;flex-direction:column;gap:6px">${g.items.map(it=>{const i=flat.push(it)-1;return `<button data-mi="${i}" style="${bs}">${it.label}</button>`;}).join('')}</div>`).join('');
+  m.innerHTML=`<h3>Menu</h3><div style="margin:4px 0 2px">${body}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
   $('overlay').classList.add('open');
-  m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
+  m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=flat[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
   $('menuClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openMenu=openMenu;
@@ -2117,13 +2131,12 @@ function renderHome(){
 
   $('view').innerHTML=`
     ${topRight}
-    ${quoteEl}
+    ${jfeat}
     <div class="home-status">${sub}</div>
     ${dueEl}
     <div class="home-areas">${acards}</div>
     ${otd?`<div class="onthisday"><div class="od">On this day · ${otd.when.slice(0,4)}</div><div class="oq">"${esc(otd.text.slice(0,220))}${otd.text.length>220?'…':''}"</div></div>`:''}
     <div class="home-sec"><div class="sh">On your mind</div>${todayRows}</div>
-    ${ref?`<div class="home-sec"><div class="sh">Latest reflection</div><div class="home-row serif"><span class="rtext" style="white-space:normal">${esc(ref.text.slice(0,180))}${ref.text.length>180?'…':''}</span></div></div>`:''}
     ${toggle}
   `;
   $('view').querySelectorAll('[data-hm]').forEach(b=>b.onclick=()=>{homeMode=b.dataset.hm;savePrefs();renderHome();});
@@ -2346,6 +2359,19 @@ async function stopStudyTimer(){
 }
 function toggleStudyTimer(){if(studyTimerStart)stopStudyTimer();else startStudyTimer();}
 function resumeStudyTimer(){try{const v=localStorage.getItem('repo:studytimer');if(v){const t=parseInt(v,10);if(t&&Date.now()-t<86400000){studyTimerStart=t;renderFocusBar();clearInterval(_studyTick);_studyTick=setInterval(renderFocusBar,1000);}else{localStorage.removeItem('repo:studytimer');}}}catch(e){}}
+// auto-stop the focus timer when the tab/app closes — logs the elapsed minutes synchronously
+function finalizeStudyTimerSync(){
+  if(!studyTimerStart)return;
+  const mins=Math.round((Date.now()-studyTimerStart)/60000);
+  studyTimerStart=null;try{localStorage.removeItem('repo:studytimer');}catch(e){}
+  if(mins>=1){
+    const note=entries.find(x=>x.id===wsActiveId);const area=(note&&note.area)||(areas[0]||{}).id;const label=note&&note.title?note.title:'';
+    entries.push({id:uid(),type:'logs',area,title:null,text:`📚 Studied ${fmtDur(mins)}${label?' — '+label:''}`,source:null,meta:null,tags:['study'],studyMins:mins,when:todayISO(),imgs:[],links:[],done:false,created:new Date().toISOString(),_mod:Date.now()});
+    try{window.storage&&window.storage.set('repo:entries',JSON.stringify(entries));}catch(e){}
+  }
+}
+window.addEventListener('pagehide',e=>{if(!e.persisted)finalizeStudyTimerSync();});
+window.addEventListener('beforeunload',finalizeStudyTimerSync);
 function renderStudy(){
   const streak=studyStreak();
   const wkISO=new Date(Date.now()-6*864e5).toISOString().slice(0,10);
