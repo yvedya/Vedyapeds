@@ -209,14 +209,16 @@
   .daily-quote::before{content:'\201C';display:block;font-family:var(--serif);font-size:46px;line-height:.4;color:var(--faint);margin-bottom:8px}
   .daily-quote .dq-text{font-family:var(--serif);font-size:25px;line-height:1.5;color:var(--ink)}
   .daily-quote .dq-text p{margin:0}
-  .home-bgcap{font-size:12px;color:var(--muted);text-align:right;margin:-2px 2px 12px}
-  .jr-feature{position:relative;text-align:center;margin:28px auto 30px;max-width:700px;padding:28px 26px 22px;border-radius:18px;background:linear-gradient(var(--accent-soft),transparent)}
-  .jr-feature-mark{font-family:var(--serif);font-size:62px;line-height:.5;color:var(--accent);opacity:.55;margin-bottom:10px}
-  .jr-feature-text{font-family:var(--serif);font-size:30px;line-height:1.45;color:var(--ink);font-style:italic}
+  .home-topright{display:flex;flex-direction:column;align-items:flex-end;gap:9px;margin:6px 2px 18px}
+  .home-bgcap{display:inline-flex;align-items:center;gap:5px;font-size:13.5px;color:var(--ink);font-weight:500;letter-spacing:.01em}
+  .home-bgcap .pin{color:#e0564a;font-size:13px}
+  .jr-feature{position:relative;text-align:center;margin:16px auto 26px;max-width:600px;padding:4px 16px}
+  .jr-feature-mark{font-family:var(--serif);font-size:38px;line-height:.4;color:var(--accent);opacity:.32;margin-bottom:2px}
+  .jr-feature-text{font-family:var(--serif);font-size:22.5px;line-height:1.5;color:var(--ink);font-style:italic}
   .jr-feature-text p{margin:0}
-  .jr-feature-meta{margin-top:14px;font-size:13px;color:var(--muted);font-family:var(--sans)}
-  .jr-feature-badge{font-size:11px;color:var(--accent);font-family:var(--sans);letter-spacing:.04em;margin-bottom:6px}
-  @media(max-width:560px){.jr-feature-text{font-size:23px}.jr-feature{padding:22px 16px}}
+  .jr-feature-meta{margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--sans)}
+  .jr-feature-badge{font-size:11px;color:var(--accent);font-family:var(--sans);letter-spacing:.04em;margin-bottom:5px}
+  @media(max-width:560px){.jr-feature-text{font-size:19.5px}}
   .home-status{text-align:center;font-size:13.5px;color:var(--muted);margin:0 0 26px}
   .entry .acts .feat{color:var(--faint)}
   .entry .acts .feat.on{color:#d9a400}
@@ -519,10 +521,10 @@
   .pm-car{position:absolute;top:54px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);filter:grayscale(.85) opacity(.7)}
   .pm-car.on{background:rgba(255,255,255,.92);filter:none}
   .pm-car .caricon{width:22px}
-  .caricon{width:1.5em;height:auto;vertical-align:-.42em;display:inline-block}
-  .home-bgctrl #carBtn .caricon{width:1.6em;vertical-align:-.45em;margin-right:2px}
-  .home-bgctrl{display:flex;gap:8px;justify-content:flex-end;margin:-2px 2px 12px}
-  .home-bgctrl button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 13px;font-size:12.5px;font-family:var(--sans);cursor:pointer}
+  .caricon{width:1.4em;height:auto;vertical-align:-.32em;display:inline-block}
+  .home-bgctrl{display:flex;gap:8px}
+  .home-bgctrl button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:13px;font-family:var(--sans);cursor:pointer;line-height:1}
+  .home-bgctrl button .caricon{width:20px;vertical-align:0}
   .home-bgctrl button:hover{border-color:var(--accent);color:var(--accent)}
   .pm-body{padding:16px 18px;background:var(--mtint2,var(--surface))}
   .pm-extra{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
@@ -1079,7 +1081,7 @@ function openMenu(){
     {label:'🔑  Change password', fn:'__changePw'},
     {label:'↩  Sign out', fn:'__signOut'}
   ];
-  m.innerHTML=`<h3>Menu</h3><div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">${items.map((it,i)=>`<button data-mi="${i}" style="text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px">${it.label}</button>`).join('')}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
+  m.innerHTML=`<h3>Menu</h3><div style="display:flex;flex-direction:column;gap:6px;margin:12px 0">${items.map((it,i)=>`<button data-mi="${i}" style="display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px">${it.label}</button>`).join('')}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
   $('overlay').classList.add('open');
   m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
   $('menuClose').onclick=()=>$('overlay').classList.remove('open');
@@ -1434,12 +1436,20 @@ const rgb=o=>`rgb(${o.r},${o.g},${o.b})`;
 const rgba=(o,a)=>`rgba(${o.r},${o.g},${o.b},${a})`;
 function lum(o){return (0.299*o.r+0.587*o.g+0.114*o.b)/255;}
 
-function bgMemories(){return entries.filter(e=>e.type==='memories'&&e.bg&&e.imgs&&e.imgs.length);}
+// set of starred background image srcs for a memory (supports MANY; back-compat with old single e.bg/e.bgImg)
+function bgSetOf(e){
+  const imgs=e.imgs||[];
+  let arr=(e.bgImgs&&e.bgImgs.length)?e.bgImgs:(e.bg?[e.bgImg||imgs[0]]:[]);
+  return arr.filter(s=>imgs.includes(s));
+}
+function bgMemories(){return entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length&&bgSetOf(e).length);}
+// every starred image across all memories, as {mem,src} — these cycle as the daily backdrop
+function bgShots(){const out=[];entries.forEach(e=>{if(e.type!=='memories'||!e.imgs||!e.imgs.length)return;bgSetOf(e).forEach(src=>out.push({mem:e,src}));});return out;}
 function carMemories(){return entries.filter(e=>e.type==='memories'&&e.carBg&&e.imgs&&e.imgs.length);}
 // the memory + image currently shown as the backdrop (manual override wins over the daily pick)
 function shownBgMemory(){
   if(homeBgOverride){const m=entries.find(x=>x.id===homeBgOverride.id);if(m&&m.imgs&&m.imgs.length)return {mem:m,src:homeBgOverride.src||m.imgs[0]};homeBgOverride=null;}
-  const d=dailyBgMemory();return d?{mem:d,src:d.bgImg||d.imgs[0]}:null;
+  const pool=bgShots();return pool.length?pool[dayIndex()%pool.length]:null;
 }
 function cycleCarBg(){
   const cars=carMemories();
@@ -1457,10 +1467,6 @@ function ensureThemes(cb){
   if(!need.length){cb&&cb();return;}
   let done=0;
   need.forEach(e=>{extractPalette(disp(e.imgs[0]),pal=>{if(pal)e.theme=pal;if(++done===need.length){saveEntries();cb&&cb();}});});
-}
-function dailyBgMemory(){
-  const pool=bgMemories();if(!pool.length)return null;
-  return pool[dayIndex()%pool.length];
 }
 function dailyQuote(){
   const pool=starredQuotes();if(!pool.length)return null;
@@ -1967,8 +1973,8 @@ function entryHTML(e,ro){
   // image-forward photo memory card
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
     const tint=e.theme?`style="--mtint:${rgba(e.theme.accent,0.16)};--mtint2:${rgba(e.theme.dom,0.10)}"`:'';
-    const activeSrc=e.bg?(e.bgImg||e.imgs[0]):null;
-    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button>${hero?`<button class="pm-car ${e.carBg?'on':''}" data-carbg="${e.id}" data-caridx="${idx}" title="${e.carBg?'car highlight — tap to remove':'mark as a car highlight (for the home car button)'}">${CAR_ICON}</button>`:''}</div>`;};
+    const bgset=new Set(bgSetOf(e));
+    const shot=(src,idx,hero)=>{const on=bgset.has(src);return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'one of your daily backdrops — tap to remove':'add this photo to your daily backdrops'}">${on?'★':'☆'}</button>${hero?`<button class="pm-car ${e.carBg?'on':''}" data-carbg="${e.id}" data-caridx="${idx}" title="${e.carBg?'car highlight — tap to remove':'mark as a car highlight (for the home car button)'}">${CAR_ICON}</button>`:''}</div>`;};
     const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map((src,i)=>shot(src,i+1,false)).join('')}</div>`:'';
     const tags=(e.tags||[]).map(tg=>`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`).join('');
     const apill=a?`<span class="areapill" style="background:${a.color}22;color:${a.color}">${esc(a.name)}</span>`:'';
@@ -2067,10 +2073,11 @@ function renderHome(){
   const quoteEl=dq?`<div class="daily-quote"><div class="dq-text">${mdRender(dq.text)}</div></div>`:'';
   // location caption for the current background image (manual pick or daily)
   const sbNow=shownBgMemory();const bgMem=sbNow&&sbNow.mem;
-  const bgCap=(bgMem&&bgMem.place)?`<div class="home-bgcap">📍 ${esc(bgMem.place)}${bgMem.when?' · '+bgMem.when.slice(0,4):''}</div>`:'';
+  const bgCap=(bgMem&&bgMem.place)?`<div class="home-bgcap"><span class="pin">📍</span>${esc(bgMem.place)}${bgMem.when?' · '+bgMem.when.slice(0,4):''}</div>`:'';
   // backdrop controls: show a car (cycles through your car highlights), and return to the daily pick
   const hasCars=carMemories().length;
   const bgControls=(hasCars||homeBgOverride)?`<div class="home-bgctrl">${hasCars?`<button id="carBtn" title="show one of your cars as the backdrop">${CAR_ICON} Car</button>`:''}${homeBgOverride?`<button id="dailyBtn" title="back to the daily backdrop">↺ Daily</button>`:''}</div>`:'';
+  const topRight=(bgCap||bgControls)?`<div class="home-topright">${bgCap}${bgControls}</div>`:'';
   // prominent featured (cycling) reflection for the journal — falls back to the latest reflection if none is starred
   const featRef=dq||entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created))[0];
   const jfeat=featRef?`<div class="jr-feature">${featRef.featured?'<div class="jr-feature-badge">★ featured</div>':''}<div class="jr-feature-mark">“</div><div class="jr-feature-text">${mdRender(featRef.text)}</div>${featRef.when?`<div class="jr-feature-meta">${relTime(featRef.when)}</div>`:''}</div>`:'';
@@ -2085,8 +2092,7 @@ function renderHome(){
     const tgEl=tasksGoals.length?tasksGoals.map(e=>{const a=areaById(e.area);const fut=isFuture(e.when);return `<div class="home-row"><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span>${e.when?`<span class="rwhen ${fut?'future':''}">${relTime(e.when)}</span>`:''}</div>`;}).join(''):'<div class="none">Clear for now.</div>';
 
     $('view').innerHTML=`
-      ${bgControls}
-      ${bgCap}
+      ${topRight}
       ${jfeat}
       <div class="home-status">${sub}</div>
       ${dueEl}
@@ -2110,8 +2116,7 @@ function renderHome(){
   }
 
   $('view').innerHTML=`
-    ${bgControls}
-    ${bgCap}
+    ${topRight}
     ${quoteEl}
     <div class="home-status">${sub}</div>
     ${dueEl}
@@ -2866,7 +2871,10 @@ function wireSection(){
   $('view').querySelectorAll('[data-goto]').forEach(b=>b.onclick=()=>gotoEntry(b.dataset.goto));
   $('view').querySelectorAll('.imgs img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
   $('view').querySelectorAll('.pm-hero img, .pm-extra img').forEach(im=>im.onclick=()=>openLb(im.dataset.full));
-  $('view').querySelectorAll('[data-bgid]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.bgid);if(!e)return;const src=e.imgs[+b.dataset.bgidx];if(!src)return;const wasActive=e.bg&&((e.bgImg||e.imgs[0])===src);if(wasActive){e.bg=false;e._mod=Date.now();await saveEntries();render();return;}e.bg=true;e.bgImg=src;e._mod=Date.now();extractPalette(disp(src),pal=>{if(pal)e.theme=pal;saveEntries();render();});});
+  $('view').querySelectorAll('[data-bgid]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.bgid);if(!e)return;const src=e.imgs[+b.dataset.bgidx];if(!src)return;
+    const set=new Set(bgSetOf(e));const adding=!set.has(src);set.has(src)?set.delete(src):set.add(src);
+    e.bgImgs=[...set];e.bg=set.size>0;if(e.bg)e.bgImg=e.bgImgs[0];else delete e.bgImg;e._mod=Date.now();
+    if(adding&&!e.theme){extractPalette(disp(src),pal=>{if(pal)e.theme=pal;saveEntries();render();});}else{await saveEntries();render();}});
   $('view').querySelectorAll('[data-carbg]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.carbg);if(!e)return;e.carBg=!e.carBg;if(e.carBg)e.carBgImg=e.imgs[+b.dataset.caridx]||e.imgs[0];else delete e.carBgImg;e._mod=Date.now();await saveEntries();render();});
   $('view').querySelectorAll('[data-feat]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();const e=entries.find(x=>x.id===b.dataset.feat);if(e){e.featured=!e.featured;await saveEntries();renderSection();}});
   if(previewOn)updatePreview();
