@@ -515,8 +515,11 @@
   .pm-hero img{width:100%;max-height:340px;object-fit:cover;display:block;cursor:pointer}
   .pm-bg{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:17px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
   .pm-bg.on{background:rgba(255,255,255,.92);color:#d9a400}
-  .pm-car{position:absolute;top:54px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);filter:grayscale(.7) opacity(.75)}
+  .pm-car{position:absolute;top:54px;right:12px;width:34px;height:34px;border-radius:50%;border:none;background:rgba(0,0,0,.45);cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);filter:grayscale(.85) opacity(.7)}
   .pm-car.on{background:rgba(255,255,255,.92);filter:none}
+  .pm-car .caricon{width:22px}
+  .caricon{width:1.5em;height:auto;vertical-align:-.42em;display:inline-block}
+  .home-bgctrl #carBtn .caricon{width:1.6em;vertical-align:-.45em;margin-right:2px}
   .home-bgctrl{display:flex;gap:8px;justify-content:flex-end;margin:-2px 2px 12px}
   .home-bgctrl button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 13px;font-size:12.5px;font-family:var(--sans);cursor:pointer}
   .home-bgctrl button:hover{border-color:var(--accent);color:var(--accent)}
@@ -826,6 +829,8 @@ let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
 let entries=[], areas=[], ready=false, carRecords=[], learnList=[], notePalette='terracotta';
 let homeBgOverride=null, _carIdx=0; // session-only manual backdrop pick (e.g. show a car)
+// custom car icon — stylized tanzanite-blue sport sedan (BMW G80 M3), used for car button/records
+const CAR_ICON=`<svg class="caricon" viewBox="0 0 100 46" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M5 31 Q5 26 11 25 L24 24 Q30 14 41 14 L58 14 Q69 14 76 23 L91 27 Q96 28 96 32 L96 34 Q96 36 93 36 L9 36 Q5 36 5 32 Z" fill="#27365a"/><path d="M28 23 Q33 17 41 17 L56 17 Q64 17 69 23 Z" fill="#aac4e2"/><path d="M9 33 L92 33" stroke="#3a4e7a" stroke-width="1.4"/><circle cx="29" cy="36" r="7.5" fill="#141b2c"/><circle cx="29" cy="36" r="3" fill="#6f8099"/><circle cx="73" cy="36" r="7.5" fill="#141b2c"/><circle cx="73" cy="36" r="3" fill="#6f8099"/></svg>`;
 
 const $=id=>document.getElementById(id);
 const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
@@ -1064,7 +1069,7 @@ function openMenu(){
     {label:(typeof theme!=='undefined'&&theme==='dark')?'☀  Light mode':'☾  Dark mode', fn:'__toggleTheme'},
     {label:'✦  Ask / review my week', fn:'__openAI'},
     {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
-    {label:'🚗  Car records', fn:'__openCarRecords'},
+    {label:CAR_ICON+'  Car records', fn:'__openCarRecords'},
     {label:'🎨  Note colors', fn:'__openNotePalette'},
     {label:'📝  Feedback & ideas', fn:'__openFeedback'},
     {label:'🔍  Search everything', fn:'__openSearch'},
@@ -1227,7 +1232,7 @@ async function extractCarRecord(dataUrl){
 async function openCarRecords(){
   await signCarUrls();
   const m=$('modal');
-  m.innerHTML=`<h3>🚗 Car records</h3><div class="msub">Upload service records, invoices, and receipts. Each photo is read by AI, so you can ask things like "when was my last oil change?" in ✦ Ask.</div>
+  m.innerHTML=`<h3>${CAR_ICON} Car records</h3><div class="msub">Upload service records, invoices, and receipts. Each photo is read by AI, so you can ask things like "when was my last oil change?" in ✦ Ask.</div>
     <button id="carAdd" class="prim" style="width:100%;padding:11px;margin:10px 0">＋ Add service record (photo)</button>
     <input type="file" id="carFile" accept="image/*" multiple style="display:none">
     <div id="carStatus" style="font-size:13px;color:var(--muted);margin-bottom:8px"></div>
@@ -1762,27 +1767,41 @@ function processFiles(files){
         }catch(err){console.error(err);alert('Photo upload failed — check your connection and try again.');return;}
         if(wsImgTarget){const note=entries.find(x=>x.id===wsImgTarget);if(note){note.imgs=note.imgs||[];note.imgs.push(path);if(isoDate&&!note.when)note.when=isoDate;if(gps&&!note.gps)note.gps=gps;commitWsSave?commitWsSave(true):0;saveEntries();renderWorkspace();}}
         else{pendingImgs.push(path);if(isoDate&&!draft.when){draft.when=isoDate;const wf=$('when');if(wf)wf.value=isoDate;}if(gps)pendingGps=gps;renderThumbs();
-          if(current==='memories'&&!((draft.place||'').trim())&&!_placeBusy){_placeBusy=true;const du=gps?null:c.toDataURL('image/jpeg',0.8);suggestMemPlace(gps,du);}}
+          if(current==='memories'&&pendingImgs.length<=8){const du=c.toDataURL('image/jpeg',0.8);analyzeMemPhoto(gps,du,path);}}
       };img.onerror=()=>URL.revokeObjectURL(url);img.src=url;
     };
     r.readAsArrayBuffer(f);
   });
 }
-let pendingGps=null, _placeBusy=false;
-// Suggest a location for a memory photo: reverse-geocode GPS if present, else AI-guess from the image.
-async function suggestMemPlace(gps,dataUrl){
+let pendingGps=null;
+// Analyze a memory photo with AI: returns a location guess + whether it's a car.
+// Auto-fills the location (once) and auto-flags car photos for the home car backdrop.
+async function analyzeMemPhoto(gps,dataUrl,path){
   const st=()=>$('memPlaceStatus');
-  if(st())st().textContent='finding location…';
-  let place=null,fromGps=false;
+  if(!((draft.place||'').trim())&&st())st().textContent='reading photo…';
+  let res=null;try{res=await visionAnalyzeImage(dataUrl);}catch(e){}
+  if(!((draft.place||'').trim())){
+    let place=null,fromGps=false;
+    if(gps&&gps.lat!=null&&gps.lon!=null){try{place=await reverseGeocode(gps.lat,gps.lon);}catch(e){}fromGps=!!place;}
+    if(!place&&res&&res.place)place=res.place;
+    if(place&&!((draft.place||'').trim())){draft.place=place;const inp=$('memPlace');if(inp&&!inp.value.trim())inp.value=place;if(st())st().textContent=fromGps?'from photo GPS ✓':'AI guess — edit if needed';}
+    else if(st())st().textContent='';
+  }
+  if(res&&res.isCar&&!draft.carDetected){draft.carDetected=path;const ch=$('memCarHint');if(ch)ch.style.display='flex';}
+}
+async function visionAnalyzeImage(dataUrl){
+  const m=(dataUrl||'').match(/^data:(image\/\w+);base64,(.+)$/);if(!m)return null;
   try{
-    if(gps&&gps.lat!=null&&gps.lon!=null){place=await reverseGeocode(gps.lat,gps.lon);fromGps=!!place;}
-    if(!place&&dataUrl)place=await guessPlaceFromImage(dataUrl);
-  }catch(e){}
-  _placeBusy=false;
-  if(place&&!((draft.place||'').trim())){
-    draft.place=place;const inp=$('memPlace');if(inp&&!inp.value.trim())inp.value=place;
-    if(st())st().textContent=fromGps?'from photo GPS ✓':'AI guess — edit if needed';
-  }else if(st())st().textContent='';
+    const res=await fetch("/.netlify/functions/anthropic",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:80,messages:[{role:"user",content:[
+        {type:"image",source:{type:"base64",media_type:m[1],data:m[2]}},
+        {type:"text",text:`Look at this photo. Reply ONLY as JSON, no other text: {"place":"<short location guess like 'Paris, France' or 'a beach', or null if unsure>","isCar":<true ONLY if the MAIN subject of the photo is a car / automobile, otherwise false>}.`}
+      ]}]})});
+    const data=await res.json();let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim().replace(/```json|```/g,'').trim();
+    const o=JSON.parse(t);
+    const place=(o&&typeof o.place==='string'&&!/^(null|unknown)$/i.test(o.place.trim()))?o.place.trim().slice(0,80):null;
+    return {place,isCar:!!(o&&o.isCar)};
+  }catch(e){return null;}
 }
 async function reverseGeocode(lat,lon){
   try{
@@ -1790,18 +1809,6 @@ async function reverseGeocode(lat,lon){
     if(!r.ok)return null;const d=await r.json();const a=d.address||{};
     const parts=[a.city||a.town||a.village||a.hamlet||a.suburb||a.county,a.state,a.country].filter(Boolean);
     return parts.length?parts.slice(0,2).join(', '):(d.display_name||null);
-  }catch(e){return null;}
-}
-async function guessPlaceFromImage(dataUrl){
-  const m=(dataUrl||'').match(/^data:(image\/\w+);base64,(.+)$/);if(!m)return null;
-  try{
-    const res=await fetch("/.netlify/functions/anthropic",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:60,messages:[{role:"user",content:[
-        {type:"image",source:{type:"base64",media_type:m[1],data:m[2]}},
-        {type:"text",text:`Where does this photo appear to have been taken? Use visible clues — landmarks, signs, text, architecture, landscape. Reply with ONLY a short place guess (e.g. "Paris, France", "a beach", "indoor restaurant"). If you truly cannot tell, reply exactly "Unknown". No other text.`}
-      ]}]})});
-    const data=await res.json();let t=(data.content||[]).map(b=>b.type==='text'?b.text:'').join('').trim().replace(/^["']|["']$/g,'');
-    if(!t||/^unknown/i.test(t))return null;return t.slice(0,80);
   }catch(e){return null;}
 }
 function renderThumbs(){const t=$('thumbs');if(!t)return;
@@ -1910,7 +1917,8 @@ function composerHTML(){
       <textarea id="input" rows="2" placeholder="${t.ph}${fmt?'  ·  **bold**, lists, # headings':''}" style="${previewOn?'display:none':''}">${(draft.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea>
       ${fmt?`<div class="md preview ${previewOn?'':'hide'}" id="preview"></div>`:''}
       <div class="thumbs" id="thumbs"></div>
-      ${current==='memories'?`<div id="memloc" style="display:flex;align-items:center;gap:8px;margin:8px 0 2px"><span style="flex:none">📍</span><input id="memPlace" placeholder="Location — auto-suggested from the photo" value="${esc(draft.place||'')}" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 11px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none"><span id="memPlaceStatus" style="font-size:11px;color:var(--muted);flex:none;white-space:nowrap"></span></div>`:''}
+      ${current==='memories'?`<div id="memloc" style="display:flex;align-items:center;gap:8px;margin:8px 0 2px"><span style="flex:none">📍</span><input id="memPlace" placeholder="Location — auto-suggested from the photo" value="${esc(draft.place||'')}" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 11px;font-size:14px;font-family:var(--sans);color:var(--ink);outline:none"><span id="memPlaceStatus" style="font-size:11px;color:var(--muted);flex:none;white-space:nowrap"></span></div>
+      <div id="memCarHint" style="display:${(current==='memories'&&draft.carDetected)?'flex':'none'};align-items:center;gap:6px;margin:2px 0 4px;font-size:12px;color:var(--accent)">${CAR_ICON}<span>Car detected — it'll be added to your home car backdrops.</span></div>`:''}
       <div class="suggest" id="suggest"></div>
       <div class="comp-foot">
         <button class="photo-btn" id="photoBtnMain" title="add a photo"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor" style="width:15px;height:15px;vertical-align:-3px;margin-right:5px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Add photo</button>
@@ -1959,7 +1967,7 @@ function entryHTML(e,ro){
   if(e.type==='memories'&&e.imgs&&e.imgs.length){
     const tint=e.theme?`style="--mtint:${rgba(e.theme.accent,0.16)};--mtint2:${rgba(e.theme.dom,0.10)}"`:'';
     const activeSrc=e.bg?(e.bgImg||e.imgs[0]):null;
-    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button>${hero?`<button class="pm-car ${e.carBg?'on':''}" data-carbg="${e.id}" data-caridx="${idx}" title="${e.carBg?'car highlight — tap to remove':'mark as a car highlight (for the home 🚗 button)'}">🚗</button>`:''}</div>`;};
+    const shot=(src,idx,hero)=>{const on=activeSrc===src;return `<div class="pm-shot${hero?' pm-hero':''}"><img src="${disp(src)}" data-full="${src}"><button class="pm-bg${hero?'':' sm'} ${on?'on':''}" data-bgid="${e.id}" data-bgidx="${idx}" title="${on?'used as the daily background':'use this photo as the daily background'}">${on?'★':'☆'}</button>${hero?`<button class="pm-car ${e.carBg?'on':''}" data-carbg="${e.id}" data-caridx="${idx}" title="${e.carBg?'car highlight — tap to remove':'mark as a car highlight (for the home car button)'}">${CAR_ICON}</button>`:''}</div>`;};
     const gallery=e.imgs.length>1?`<div class="pm-extra">${e.imgs.slice(1).map((src,i)=>shot(src,i+1,false)).join('')}</div>`:'';
     const tags=(e.tags||[]).map(tg=>`<span class="tag" data-tag="${esc(tg)}">#${esc(tg)}</span>`).join('');
     const apill=a?`<span class="areapill" style="background:${a.color}22;color:${a.color}">${esc(a.name)}</span>`:'';
@@ -2061,7 +2069,7 @@ function renderHome(){
   const bgCap=(bgMem&&bgMem.place)?`<div class="home-bgcap">📍 ${esc(bgMem.place)}${bgMem.when?' · '+bgMem.when.slice(0,4):''}</div>`:'';
   // backdrop controls: show a car (cycles through your car highlights), and return to the daily pick
   const hasCars=carMemories().length;
-  const bgControls=(hasCars||homeBgOverride)?`<div class="home-bgctrl">${hasCars?`<button id="carBtn" title="show one of your cars as the backdrop">🚗 Car</button>`:''}${homeBgOverride?`<button id="dailyBtn" title="back to the daily backdrop">↺ Daily</button>`:''}</div>`:'';
+  const bgControls=(hasCars||homeBgOverride)?`<div class="home-bgctrl">${hasCars?`<button id="carBtn" title="show one of your cars as the backdrop">${CAR_ICON} Car</button>`:''}${homeBgOverride?`<button id="dailyBtn" title="back to the daily backdrop">↺ Daily</button>`:''}</div>`:'';
   // prominent featured (cycling) reflection for the journal
   const jfeat=dq?`<div class="jr-feature"><div class="jr-feature-mark">“</div><div class="jr-feature-text">${mdRender(dq.text)}</div>${dq.when?`<div class="jr-feature-meta">${relTime(dq.when)}</div>`:''}</div>`:'';
 
@@ -3407,6 +3415,7 @@ async function add(){
       if(current==='tasks'&&repEvery>0){e.every=repEvery;if(!('lastDone' in e))e.lastDone=null;}else if(current==='tasks'){delete e.every;delete e.lastDone;}
       if(current==='tasks')e.priority=taskPrio||null;
       if(current==='memories')e.place=memPlace||null;
+      if(current==='memories'&&draft.carDetected&&pendingImgs.includes(draft.carDetected)){e.carBg=true;e.carBgImg=draft.carDetected;}
       e.theme=null;e._mod=Date.now();}
     closeComposer();renderSection();await saveEntries();ensureThemes(()=>render());return;
   }
@@ -3417,6 +3426,7 @@ async function add(){
   if(current==='tasks'&&repEvery>0){ne.every=repEvery;ne.lastDone=null;}
   if(current==='tasks'&&taskPrio)ne.priority=taskPrio;
   if(current==='memories'&&memPlace)ne.place=memPlace;
+  if(current==='memories'&&draft.carDetected&&pendingImgs.includes(draft.carDetected)){ne.carBg=true;ne.carBgImg=draft.carDetected;}
   entries.push(ne);
   closeComposer();
   renderSection();await saveEntries();ensureThemes(()=>render());
