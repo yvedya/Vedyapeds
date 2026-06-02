@@ -1280,6 +1280,52 @@ function openQuiz(state){
   if($('qzClose'))$('qzClose').onclick=()=>$('overlay').classList.remove('open');
 }
 
+// ---- AI auto-format: tidy a note's markdown without changing the content ----
+let _fmtPending='';
+async function aiFormatNote(){
+  flushWsSave();
+  const e=entries.find(x=>x.id===wsActiveId); if(!e||!((e.text||'').trim())){showToast('Open a note with some content to format.');return;}
+  openFormatSuggest('loading');
+  try{
+    const ans=await askAnthropic(`Reformat the following note into clean, readable Markdown WITHOUT changing the meaning or wording of its content — keep every fact and detail. Improve STRUCTURE only: use "## " headings where natural, "- " bullet lists, "1." numbered lists for steps/sequences, **bold** for key terms, drug names and critical values, and a Markdown table only when content is clearly tabular. Do not add new information or commentary. Output ONLY the reformatted Markdown, nothing else.\n\nNOTE TITLE: ${e.title||''}\n\nNOTE:\n${(e.text||'').slice(0,6000)}`,2000);
+    let out=(ans||'').replace(/^```(?:markdown)?\n?/,'').replace(/```$/,'').trim();
+    if(!out){openFormatSuggest('error');return;}
+    openFormatSuggest(out);
+  }catch(err){ openFormatSuggest('error'); }
+}
+function openFormatSuggest(state){
+  const m=$('modal');
+  if(state==='loading'){m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Tidying the formatting…</div><div class="mfoot"><button id="fmClose" class="prim">Cancel</button></div>`;$('overlay').classList.add('open');$('fmClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  if(state==='error'){m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Could not format — check your connection and try again.</div><div class="mfoot"><button id="fmClose" class="prim">Done</button></div>`;$('overlay').classList.add('open');$('fmClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  _fmtPending=state;
+  m.innerHTML=`<h3>✦ Format note</h3><div class="msub">Preview of the tidied note — your wording is kept, only the formatting changes.</div>
+    <div class="text md" style="max-height:50vh;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:12px 0;background:var(--bg)">${mdRender(state)}</div>
+    <div class="mfoot"><button id="fmCancel" style="margin-right:auto;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)">Keep original</button><button id="fmApply" class="prim">Apply formatting</button></div>`;
+  $('overlay').classList.add('open');
+  $('fmCancel').onclick=()=>$('overlay').classList.remove('open');
+  $('fmApply').onclick=()=>{const e=entries.find(x=>x.id===wsActiveId);if(e){e.text=_fmtPending;e.updated=new Date().toISOString();e._mod=Date.now();saveEntries();}$('overlay').classList.remove('open');renderWorkspace();showToast('Formatting applied');};
+}
+// ---- AI auto-tag: suggest tags for a note (reuses existing tags where possible) ----
+async function aiTagNote(){
+  flushWsSave();
+  const e=entries.find(x=>x.id===wsActiveId); if(!e||!(((e.text||'')+(e.title||'')).trim())){showToast('Open a note with some content first.');return;}
+  openTagSuggest('loading');
+  try{const sugg=await suggestTags(e.title,e.text,'knowledge');openTagSuggest(sugg.filter(t=>!(e.tags||[]).includes(t)));}
+  catch(err){openTagSuggest('error');}
+}
+function openTagSuggest(state){
+  const m=$('modal');
+  if(state==='loading'){m.innerHTML=`<h3># Suggested tags</h3><div class="msub">Reading the note…</div><div class="mfoot"><button id="tgClose" class="prim">Cancel</button></div>`;$('overlay').classList.add('open');$('tgClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  if(state==='error'){m.innerHTML=`<h3># Suggested tags</h3><div class="msub">Could not suggest tags — check your connection.</div><div class="mfoot"><button id="tgClose" class="prim">Done</button></div>`;$('overlay').classList.add('open');$('tgClose').onclick=()=>$('overlay').classList.remove('open');return;}
+  const fresh=Array.isArray(state)?state:[];
+  const body=fresh.length?`<div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">${fresh.map(t=>`<button data-tg="${esc(t)}" style="border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px">+ #${esc(t)}</button>`).join('')}</div><div class="msub">Tap a tag to add it (existing tags are reused where they fit).</div>`:`<div class="msub">No new tags to suggest — this note looks well-tagged already.</div>`;
+  m.innerHTML=`<h3># Suggested tags</h3>${body}<div class="mfoot">${fresh.length?'<button id="tgAll" class="add" style="margin-right:auto">Add all</button>':''}<button id="tgClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const addTag=(t)=>{const cur=entries.find(x=>x.id===wsActiveId);if(!cur)return;cur.tags=cur.tags||[];if(!cur.tags.includes(t)){cur.tags.push(t);cur._mod=Date.now();saveEntries();const inp=$('wsTags');if(inp)inp.value=cur.tags.join(', ');}};
+  m.querySelectorAll('[data-tg]').forEach(b=>b.onclick=()=>{addTag(b.dataset.tg);b.textContent='✓ #'+b.dataset.tg;b.disabled=true;b.style.opacity=.55;});
+  if($('tgAll'))$('tgAll').onclick=()=>{fresh.forEach(addTag);$('overlay').classList.remove('open');renderWorkspace();showToast('Tags added');};
+  $('tgClose').onclick=()=>{$('overlay').classList.remove('open');renderWorkspace();};
+}
 // extract dominant + accent colors from an image data-url (browser-side)
 function extractPalette(dataUrl,cb){
   const img=new Image();
@@ -2868,6 +2914,8 @@ function wsEditorHTML(){
       <button class="ws-tbtn" id="wsImg" title="image"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></button>
       <button class="ws-tbtn" id="wsScan" title="scan handwritten note"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M4 7V5a1 1 0 0 1 1-1h2M4 17v2a1 1 0 0 0 1 1h2M20 7V5a1 1 0 0 0-1-1h-2M20 17v2a1 1 0 0 1-1 1h-2"/><path d="M7 12h10M9 9h6M9 15h4"/></svg></button>
       <button class="ws-tbtn" id="wsLink" title="link notes"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+      <button class="ws-tbtn" id="wsFormat" title="AI: tidy the formatting (make it readable)"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M4 6h16M4 12h10M4 18h13"/></svg></button>
+      <button class="ws-tbtn" id="wsTagAI" title="AI: suggest tags" style="font-weight:700">#</button>
       <button class="ws-tbtn" id="wsLinkAI" title="suggest related notes to link">✦</button>
       <button class="ws-tbtn ${wsHistoryOpen?'on':''}" id="wsHist" title="history (${hist.length})"><svg viewBox="0 0 24 24" stroke-width="2" fill="none" stroke="currentColor"><path d="M12 8v4l3 2"/><circle cx="12" cy="12" r="9"/></svg></button>
       <button class="ws-tbtn" id="wsPin" title="pin a version now">⚑</button>
@@ -2946,6 +2994,8 @@ function wireWorkspace(){
   if($('srAgain'))$('srAgain').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,false);};
   if($('srGood'))$('srGood').onclick=()=>{const d=srDue();if(d[0])srReview(d[0].id,true);};
   if($('wsLinkAI'))$('wsLinkAI').onclick=aiSuggestLinks;
+  if($('wsFormat'))$('wsFormat').onclick=aiFormatNote;
+  if($('wsTagAI'))$('wsTagAI').onclick=aiTagNote;
   if($('wsQuiz'))$('wsQuiz').onclick=quizNote;
   ws.querySelectorAll('[data-cb]').forEach(b=>b.onclick=()=>{graphColorBy=b.dataset.cb;renderWorkspace();});
   ws.querySelectorAll('[data-gb]').forEach(b=>b.onclick=()=>{wsGroupBy=b.dataset.gb;renderWorkspace();});
