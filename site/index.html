@@ -1069,6 +1069,7 @@ function openSearch(){
 }
 window.__openSearch=openSearch;
 // ---- Consolidated menu (declutters the bottom bar) ----
+let _menuTab=0;
 function openMenu(){
   const m=$('modal');
   const groups=[
@@ -1079,11 +1080,11 @@ function openMenu(){
       {label:'🎨  Note colors', fn:'__openNotePalette'},
       {label:CAR_ICON+'  Car records', fn:'__openCarRecords'},
     ]},
-    {h:'Share & feedback',items:[
+    {h:'Share',items:[
       {label:'📣  Friend update', fn:'__openFriendShare'},
       {label:'📝  Feedback & ideas', fn:'__openFeedback'},
     ]},
-    {h:'Your data',items:[
+    {h:'Data',items:[
       {label:'🗑  Trash', fn:'__openTrash'},
       {label:'⬇  Backup & restore', fn:'__openBackup'},
     ]},
@@ -1093,11 +1094,14 @@ function openMenu(){
       {label:'↩  Sign out', fn:'__signOut'},
     ]},
   ];
-  const flat=[];const bs="display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px;width:100%";
-  const body=groups.map(g=>`<div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:14px 2px 7px">${g.h}</div><div style="display:flex;flex-direction:column;gap:6px">${g.items.map(it=>{const i=flat.push(it)-1;return `<button data-mi="${i}" style="${bs}">${it.label}</button>`;}).join('')}</div>`).join('');
-  m.innerHTML=`<h3>Menu</h3><div style="margin:4px 0 2px">${body}</div><div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
+  if(_menuTab<0||_menuTab>=groups.length)_menuTab=0;
+  const tabs=`<div style="display:flex;gap:6px;margin:12px 0 14px;flex-wrap:wrap">${groups.map((g,i)=>`<button data-mt="${i}" style="border:1px solid ${i===_menuTab?'var(--accent)':'var(--line)'};background:${i===_menuTab?'var(--accent-soft)':'var(--bg)'};color:${i===_menuTab?'var(--accent)':'var(--muted)'};border-radius:999px;padding:6px 14px;font-size:12.5px;cursor:pointer;font-family:var(--sans)">${g.h}</button>`).join('')}</div>`;
+  const g=groups[_menuTab];const bs="display:flex;align-items:center;gap:9px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:9px;padding:11px 13px;cursor:pointer;color:var(--ink);font-size:14px;width:100%";
+  const list=`<div style="display:flex;flex-direction:column;gap:7px">${g.items.map((it,i)=>`<button data-mi="${i}" style="${bs}">${it.label}</button>`).join('')}</div>`;
+  m.innerHTML=`<h3>Menu</h3>${tabs}${list}<div class="mfoot"><button id="menuClose" class="prim">Close</button></div>`;
   $('overlay').classList.add('open');
-  m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=flat[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
+  m.querySelectorAll('[data-mt]').forEach(b=>b.onclick=()=>{_menuTab=+b.dataset.mt;openMenu();});
+  m.querySelectorAll('[data-mi]').forEach(b=>b.onclick=()=>{const it=g.items[+b.dataset.mi];$('overlay').classList.remove('open');if(window[it.fn])window[it.fn]();});
   $('menuClose').onclick=()=>$('overlay').classList.remove('open');
 }
 window.__openMenu=openMenu;
@@ -1163,17 +1167,34 @@ function friendLink(){return (friendShare&&friendShare.token)?`${location.origin
 async function openFriendShare(){await loadFriendShare();_friendDraft=null;drawFriendShare('idle');}
 async function genFriendUpdate(){
   drawFriendShare('loading');
-  const cut=new Date(Date.now()-45*864e5).toISOString().slice(0,10);
-  let pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length&&(e.when||(e.created||'').slice(0,10))>=cut).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created));
-  if(pm.length<3)pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,8);
+  const wk=new Date(Date.now()-7*864e5).toISOString().slice(0,10);
+  const inWk=e=>((e.when||(e.created||'').slice(0,10))>=wk);
+  const uniq=a=>[...new Set(a.map(s=>(s||'').toString().replace(/\s+/g,' ').trim()).filter(Boolean))];
+  let pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length&&inWk(e)).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created));
+  if(!pm.length)pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,6);
   pm=pm.slice(0,12);
-  const refs=entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()&&(e.when||(e.created||'').slice(0,10))>=cut).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,5);
-  const ctx=pm.map(m=>`- ${m.when||''} ${m.place?('('+m.place+') '):''}${((m.text||'')+'').replace(/\s+/g,' ').slice(0,140)}`).join('\n')+(refs.length?'\n\nReflections:\n'+refs.map(r=>'- '+((r.text||'')+'').replace(/\s+/g,' ').slice(0,140)).join('\n'):'');
+  const refs=entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()&&inWk(e)).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,5);
+  // what I got done this week (completed tasks, recurring chores done, study time, logged activity)
+  const done=[];
+  entries.filter(e=>e.type==='tasks'&&!e.every&&e.done&&((e.doneAt||e.when||'')>=wk)).forEach(e=>done.push(e.text));
+  entries.filter(e=>e.type==='tasks'&&e.every&&e.lastDone&&e.lastDone>=wk).forEach(e=>done.push(e.text));
+  const sm=studyMinSince(wk);if(sm>=1)done.push('Studied '+fmtDur(sm));
+  entries.filter(e=>e.type==='logs'&&inWk(e)&&(e.text||'').trim()).forEach(e=>done.push(((e.text||'')+'').replace(/^📚\s*/,'').slice(0,90)));
+  // still on my plate — for accountability
+  const acc=[];
+  entries.filter(e=>e.type==='tasks'&&!e.done&&!e.every).forEach(e=>{const od=e.when&&e.when<todayISO();acc.push(e.text+(od?' (overdue)':''));});
+  (typeof dueRecurring==='function'?dueRecurring():[]).forEach(e=>acc.push(e.text+' (recurring, due)'));
+  const doneU=uniq(done).slice(0,14),accU=uniq(acc).slice(0,10);
+  const ctx=`Got done this week:\n${doneU.map(x=>'- '+x).join('\n')||'(little logged)'}\nPhotos:\n${pm.map(m=>`- ${m.place?('('+m.place+') '):''}${((m.text||'')+'').replace(/\s+/g,' ').slice(0,100)}`).join('\n')}`;
   let res=null;
-  try{const raw=await askAnthropic(`Summarize my recent highlights into a SHORT, friend-facing "what I've been up to" update. Reply ONLY as JSON, no other text: {"greeting":"one short warm sentence, max ~12 words","highlights":["3 to 6 very short, concrete highlight phrases, 3-8 words each, e.g. 'Sunset on the Oregon coast', 'Coastal drives in the M3', 'Deep in ECMO study'"]}. Be specific to the data; no filler.\n\nHIGHLIGHTS DATA:\n${ctx||'(quiet lately)'}`,400);res=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());}catch(e){}
-  const greeting=(res&&res.greeting)||'Hi friends — a few recent highlights ♡';
+  try{const raw=await askAnthropic(`Summarize MY WEEK into a short, friend-facing update. Reply ONLY as JSON, no other text: {"greeting":"one short warm sentence, max ~12 words","highlights":["3-5 very short concrete phrases, 3-8 words each, drawn from what I did this week"]}. Specific, no filler.\n\nMY WEEK:\n${ctx}`,350);res=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());}catch(e){}
+  const greeting=(res&&res.greeting)||'Here’s my week ♡';
   const highlights=(res&&Array.isArray(res.highlights)?res.highlights:[]).map(x=>String(x).replace(/^[-•✦\s]+/,'').slice(0,80)).filter(Boolean).slice(0,6);
-  _friendDraft={greeting,highlights,photos:pm.map(m=>({path:m.imgs[0],cap:((m.text||'')+'').replace(/\s+/g,' ').slice(0,80),place:m.place||'',date:m.when||'',on:true})),reflections:refs.map(r=>({text:((r.text||'')+'').slice(0,300),date:r.when||'',on:false}))};
+  _friendDraft={greeting,highlights,
+    done:doneU.map(t=>({text:t,on:true})),
+    accountable:accU.map(t=>({text:t,on:true})),
+    photos:pm.map(m=>({path:m.imgs[0],cap:((m.text||'')+'').replace(/\s+/g,' ').slice(0,80),place:m.place||'',date:m.when||'',on:true})),
+    reflections:refs.map(r=>({text:((r.text||'')+'').slice(0,300),date:r.when||'',on:false}))};
   drawFriendShare('edit');
 }
 function drawFriendShare(state){
@@ -1186,6 +1207,8 @@ function drawFriendShare(state){
       <input id="fsGreet" value="${esc(_friendDraft.greeting||'')}" style="width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">
       <label class="msub">Highlights (one per line — keep them short):</label>
       <textarea id="fsHl" style="width:100%;box-sizing:border-box;min-height:96px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">${esc((_friendDraft.highlights||[]).join('\n'))}</textarea>
+      ${(_friendDraft.done&&_friendDraft.done.length)?`<div class="msub">What I got done this week (tap to toggle):</div><div style="margin:6px 0 12px">${_friendDraft.done.map((x,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:4px 0;cursor:pointer;color:var(--ink)"><input type="checkbox" data-fsd="${i}" ${x.on?'checked':''} style="margin-top:3px"><span>${esc(x.text)}</span></label>`).join('')}</div>`:''}
+      ${(_friendDraft.accountable&&_friendDraft.accountable.length)?`<div class="msub">Hold me accountable to (still on my plate):</div><div style="margin:6px 0 12px">${_friendDraft.accountable.map((x,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:4px 0;cursor:pointer;color:var(--ink)"><input type="checkbox" data-fsa="${i}" ${x.on?'checked':''} style="margin-top:3px"><span>${esc(x.text)}</span></label>`).join('')}</div>`:''}
       <div class="msub">Photos (tap to include/exclude):</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px">${_friendDraft.photos.map((p,i)=>`<button data-fsp="${i}" style="position:relative;border:none;padding:0;cursor:pointer;border-radius:8px;overflow:hidden;width:74px;height:74px;opacity:${p.on?'1':'.32'}"><img src="${disp(p.path)}" style="width:100%;height:100%;object-fit:cover">${p.on?'<span style="position:absolute;top:3px;right:3px;background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center">✓</span>':''}</button>`).join('')}</div>
       ${_friendDraft.reflections.length?`<div class="msub">Reflections to include:</div><div style="margin:6px 0 12px">${_friendDraft.reflections.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 0;cursor:pointer;color:var(--ink)"><input type="checkbox" data-fsr="${i}" ${r.on?'checked':''} style="margin-top:3px"><span>${esc(r.text.slice(0,120))}</span></label>`).join('')}</div>`:''}
@@ -1202,6 +1225,8 @@ function drawFriendShare(state){
   if($('fsHl'))$('fsHl').addEventListener('input',e=>{if(_friendDraft)_friendDraft.highlights=e.target.value.split('\n').map(s=>s.trim()).filter(Boolean);});
   m.querySelectorAll('[data-fsp]').forEach(b=>b.onclick=()=>{const p=_friendDraft.photos[+b.dataset.fsp];if(p){p.on=!p.on;drawFriendShare('edit');}});
   m.querySelectorAll('[data-fsr]').forEach(c=>c.onchange=()=>{const r=_friendDraft.reflections[+c.dataset.fsr];if(r)r.on=c.checked;});
+  m.querySelectorAll('[data-fsd]').forEach(c=>c.onchange=()=>{const x=_friendDraft.done[+c.dataset.fsd];if(x)x.on=c.checked;});
+  m.querySelectorAll('[data-fsa]').forEach(c=>c.onchange=()=>{const x=_friendDraft.accountable[+c.dataset.fsa];if(x)x.on=c.checked;});
   if($('fsPublish'))$('fsPublish').onclick=publishFriendUpdate;
   if($('fsClose'))$('fsClose').onclick=()=>$('overlay').classList.remove('open');
 }
@@ -1211,6 +1236,8 @@ async function publishFriendUpdate(){
   const greeting=((($('fsGreet')||{}).value)||_friendDraft.greeting||'').trim();
   const highlights=((($('fsHl')||{}).value)||(_friendDraft.highlights||[]).join('\n')).split('\n').map(s=>s.trim()).filter(Boolean).slice(0,8);
   friendShare={published:true,token,greeting,highlights,
+    done:(_friendDraft.done||[]).filter(x=>x.on).map(x=>x.text),
+    accountable:(_friendDraft.accountable||[]).filter(x=>x.on).map(x=>x.text),
     photos:_friendDraft.photos.filter(p=>p.on).map(p=>({path:p.path,cap:p.cap,place:p.place,date:p.date})),
     reflections:_friendDraft.reflections.filter(r=>r.on).map(r=>({text:r.text,date:r.date})),
     publishedAt:new Date().toISOString()};

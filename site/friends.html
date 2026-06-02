@@ -23,6 +23,12 @@
   .shot img{width:100%;height:100%;object-fit:cover;display:block}
   .shot .cap{position:absolute;left:0;right:0;bottom:0;padding:22px 12px 9px;color:#fff;font-size:12.5px;background:linear-gradient(transparent,rgba(0,0,0,.6))}
   .shot .cap .pl{display:block;font-size:11px;opacity:.85;margin-top:2px}
+  .sec-h{font-family:Georgia,serif;font-size:20px;margin:32px 0 8px;color:var(--accent);text-align:center}
+  .wk{list-style:none;padding:0;max-width:560px;margin:0 auto}
+  .wk li{font-size:15px;padding:8px 0;border-bottom:1px solid var(--line);color:#33312e;display:flex;gap:10px;align-items:flex-start}
+  .wk li:last-child{border-bottom:none}
+  .wk li::before{content:'✓';color:#3a7d3a;font-weight:700;flex:none}
+  .wk.acc li::before{content:'○';color:#c47f17;font-weight:400}
   .refl-h{font-family:Georgia,serif;font-size:20px;margin:34px 0 8px;color:var(--accent)}
   .refl{font-family:Georgia,serif;font-style:italic;font-size:17px;line-height:1.6;border-left:3px solid var(--line);padding:6px 0 6px 16px;margin:14px 0;color:#33312e}
   .refl .rd{display:block;font-style:normal;font-family:'Inter',sans-serif;font-size:11px;color:var(--muted);margin-top:5px}
@@ -47,8 +53,10 @@
   const greeting=d.greeting?`<div class="greeting">${esc(d.greeting)}</div>`:'';
   const hl=(d.highlights&&d.highlights.length)?'<ul class="hl">'+d.highlights.map(h=>`<li>${esc(h)}</li>`).join('')+'</ul>':'';
   const gallery=(d.photos&&d.photos.length)?'<div class="gallery">'+d.photos.map(p=>`<div class="shot"><img loading="lazy" src="${esc(p.url)}" alt="">${(p.cap||p.place)?`<div class="cap">${esc(p.cap||'')}${p.place?`<span class="pl">📍 ${esc(p.place)}</span>`:''}</div>`:''}</div>`).join('')+'</div>':'';
+  const done=(d.done&&d.done.length)?'<div class="sec-h">What I got done</div><ul class="wk">'+d.done.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'';
+  const acc=(d.accountable&&d.accountable.length)?'<div class="sec-h">Hold me to it</div><ul class="wk acc">'+d.accountable.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':'';
   const refl=(d.reflections&&d.reflections.length)?'<div class="refl-h">Reflections</div>'+d.reflections.map(r=>`<div class="refl">${esc(r.text)}${r.date?`<span class="rd">${esc(r.date)}</span>`:''}</div>`).join(''):'';
-  app.innerHTML=`<div class="eyebrow">An update</div><h1>What I’ve been up to</h1>${when?`<div class="date">${esc(when)}</div>`:''}${greeting}${hl}${gallery}${refl}<div class="foot">Shared privately · a quiet little corner of life ♡</div>`;
+  app.innerHTML=`<div class="eyebrow">My week</div><h1>What I’ve been up to</h1>${when?`<div class="date">${esc(when)}</div>`:''}${greeting}${hl}${gallery}${done}${acc}${refl}<div class="foot">Shared privately · a quiet little corner of life ♡</div>`;
   document.title='An update · what I’ve been up to';
 })();
 </script>

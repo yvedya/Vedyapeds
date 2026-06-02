@@ -48,6 +48,8 @@ exports.handler = async (event) => {
     return json({
       greeting: fs.greeting || fs.intro || '',
       highlights: Array.isArray(fs.highlights) ? fs.highlights : [],
+      done: Array.isArray(fs.done) ? fs.done : [],
+      accountable: Array.isArray(fs.accountable) ? fs.accountable : [],
       publishedAt: fs.publishedAt || null,
       photos,
       reflections: (fs.reflections || []).map(r => ({ text: r.text || '', date: r.date || '' }))
