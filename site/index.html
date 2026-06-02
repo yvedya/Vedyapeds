@@ -3193,8 +3193,25 @@ function levenshteinish(a,b){
 function wsMd(kind){
   const ta=$('wsText');if(!ta)return;
   const s=ta.selectionStart,en=ta.selectionEnd,v=ta.value,sel=v.slice(s,en);
-  const wrap=(p,q=p,ph='text')=>{const t=sel||ph;ta.value=v.slice(0,s)+p+t+q+v.slice(en);ta.focus();ta.setSelectionRange(s+p.length,s+p.length+t.length);};
-  const line=p=>{ta.value=v.slice(0,s)+p+(sel||'item')+v.slice(en);ta.focus();};
+  const setVal=(val,a,b)=>{ta.value=val;ta.focus();ta.setSelectionRange(a,b);};
+  // wrap-style: toggles off if the selection is already wrapped (inside or just outside)
+  const wrap=(p,q=p,ph='text')=>{
+    if(sel.length>=p.length+q.length&&sel.startsWith(p)&&sel.endsWith(q)){
+      const inner=sel.slice(p.length,sel.length-q.length);setVal(v.slice(0,s)+inner+v.slice(en),s,s+inner.length);return;}
+    if(s>=p.length&&v.slice(s-p.length,s)===p&&v.slice(en,en+q.length)===q){
+      setVal(v.slice(0,s-p.length)+sel+v.slice(en+q.length),s-p.length,en-p.length);return;}
+    const t=sel||ph;setVal(v.slice(0,s)+p+t+q+v.slice(en),s+p.length,s+p.length+t.length);
+  };
+  // line-prefix style: toggles off if the line already has this prefix; swaps if it has another
+  const line=p=>{
+    const ls=v.lastIndexOf('\n',Math.max(0,s-1))+1;
+    const leRaw=v.indexOf('\n',s),le=leRaw===-1?v.length:leRaw;
+    const cur=v.slice(ls,le);const m=cur.match(/^(#{1,6}\s|[-*+]\s|\d+\.\s|>\s)/);
+    const had=m?m[0]:'',body=had?cur.slice(had.length):cur;
+    const nl=(had===p)?body:(p+body);
+    const delta=nl.length-cur.length;
+    setVal(v.slice(0,ls)+nl+v.slice(le),Math.max(ls,s+delta),Math.max(ls,en+delta));
+  };
   if(kind==='bold')wrap('**');else if(kind==='italic')wrap('*');else if(kind==='hl')wrap('==');
   else if(kind==='code')wrap('`','`','code');
   else if(kind==='h1'||kind==='h')line('# ');else if(kind==='h2')line('## ');
