@@ -1169,9 +1169,11 @@ async function genFriendUpdate(){
   pm=pm.slice(0,12);
   const refs=entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()&&(e.when||(e.created||'').slice(0,10))>=cut).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,5);
   const ctx=pm.map(m=>`- ${m.when||''} ${m.place?('('+m.place+') '):''}${((m.text||'')+'').replace(/\s+/g,' ').slice(0,140)}`).join('\n')+(refs.length?'\n\nReflections:\n'+refs.map(r=>'- '+((r.text||'')+'').replace(/\s+/g,' ').slice(0,140)).join('\n'):'');
-  let intro='';
-  try{intro=await askAnthropic(`Write a warm, upbeat, FIRST-PERSON life update (2 short paragraphs, ~5-7 sentences total) that I'll share with friends, based on these recent highlights. Personal and genuine, like a postcard — flowing prose, no bullet points. Begin with a friendly greeting. Don't invent specifics that aren't here.\n\nHIGHLIGHTS:\n${ctx||'(quiet lately)'}`,500);}catch(e){intro='Hi friends! Here’s a little update on what I’ve been up to lately.';}
-  _friendDraft={intro:intro||'',photos:pm.map(m=>({path:m.imgs[0],cap:((m.text||'')+'').replace(/\s+/g,' ').slice(0,80),place:m.place||'',date:m.when||'',on:true})),reflections:refs.map(r=>({text:((r.text||'')+'').slice(0,300),date:r.when||'',on:true}))};
+  let res=null;
+  try{const raw=await askAnthropic(`Summarize my recent highlights into a SHORT, friend-facing "what I've been up to" update. Reply ONLY as JSON, no other text: {"greeting":"one short warm sentence, max ~12 words","highlights":["3 to 6 very short, concrete highlight phrases, 3-8 words each, e.g. 'Sunset on the Oregon coast', 'Coastal drives in the M3', 'Deep in ECMO study'"]}. Be specific to the data; no filler.\n\nHIGHLIGHTS DATA:\n${ctx||'(quiet lately)'}`,400);res=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());}catch(e){}
+  const greeting=(res&&res.greeting)||'Hi friends — a few recent highlights ♡';
+  const highlights=(res&&Array.isArray(res.highlights)?res.highlights:[]).map(x=>String(x).replace(/^[-•✦\s]+/,'').slice(0,80)).filter(Boolean).slice(0,6);
+  _friendDraft={greeting,highlights,photos:pm.map(m=>({path:m.imgs[0],cap:((m.text||'')+'').replace(/\s+/g,' ').slice(0,80),place:m.place||'',date:m.when||'',on:true})),reflections:refs.map(r=>({text:((r.text||'')+'').slice(0,300),date:r.when||'',on:false}))};
   drawFriendShare('edit');
 }
 function drawFriendShare(state){
@@ -1180,8 +1182,10 @@ function drawFriendShare(state){
   let body;
   if(state==='loading')body='<div class="msub" style="padding:18px 0">✦ Writing your update…</div>';
   else if(state==='edit'&&_friendDraft){
-    body=`<label class="msub">Your message (edit freely):</label>
-      <textarea id="fsIntro" style="width:100%;box-sizing:border-box;min-height:120px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">${esc(_friendDraft.intro)}</textarea>
+    body=`<label class="msub">Greeting (one line):</label>
+      <input id="fsGreet" value="${esc(_friendDraft.greeting||'')}" style="width:100%;box-sizing:border-box;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">
+      <label class="msub">Highlights (one per line — keep them short):</label>
+      <textarea id="fsHl" style="width:100%;box-sizing:border-box;min-height:96px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">${esc((_friendDraft.highlights||[]).join('\n'))}</textarea>
       <div class="msub">Photos (tap to include/exclude):</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px">${_friendDraft.photos.map((p,i)=>`<button data-fsp="${i}" style="position:relative;border:none;padding:0;cursor:pointer;border-radius:8px;overflow:hidden;width:74px;height:74px;opacity:${p.on?'1':'.32'}"><img src="${disp(p.path)}" style="width:100%;height:100%;object-fit:cover">${p.on?'<span style="position:absolute;top:3px;right:3px;background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center">✓</span>':''}</button>`).join('')}</div>
       ${_friendDraft.reflections.length?`<div class="msub">Reflections to include:</div><div style="margin:6px 0 12px">${_friendDraft.reflections.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 0;cursor:pointer;color:var(--ink)"><input type="checkbox" data-fsr="${i}" ${r.on?'checked':''} style="margin-top:3px"><span>${esc(r.text.slice(0,120))}</span></label>`).join('')}</div>`:''}
@@ -1194,7 +1198,8 @@ function drawFriendShare(state){
   if($('fsGen'))$('fsGen').onclick=genFriendUpdate;
   if($('fsCopy'))$('fsCopy').onclick=()=>{try{navigator.clipboard.writeText(friendLink());showToast('Link copied');}catch(e){}};
   if($('fsUnpub'))$('fsUnpub').onclick=async()=>{if(friendShare){friendShare.published=false;await saveFriendShare();}openFriendShare();};
-  if($('fsIntro'))$('fsIntro').addEventListener('input',e=>{if(_friendDraft)_friendDraft.intro=e.target.value;});
+  if($('fsGreet'))$('fsGreet').addEventListener('input',e=>{if(_friendDraft)_friendDraft.greeting=e.target.value;});
+  if($('fsHl'))$('fsHl').addEventListener('input',e=>{if(_friendDraft)_friendDraft.highlights=e.target.value.split('\n').map(s=>s.trim()).filter(Boolean);});
   m.querySelectorAll('[data-fsp]').forEach(b=>b.onclick=()=>{const p=_friendDraft.photos[+b.dataset.fsp];if(p){p.on=!p.on;drawFriendShare('edit');}});
   m.querySelectorAll('[data-fsr]').forEach(c=>c.onchange=()=>{const r=_friendDraft.reflections[+c.dataset.fsr];if(r)r.on=c.checked;});
   if($('fsPublish'))$('fsPublish').onclick=publishFriendUpdate;
@@ -1203,7 +1208,9 @@ function drawFriendShare(state){
 async function publishFriendUpdate(){
   if(!_friendDraft)return;
   const token=(friendShare&&friendShare.token)||(uid()+uid()+uid());
-  friendShare={published:true,token,intro:_friendDraft.intro,
+  const greeting=((($('fsGreet')||{}).value)||_friendDraft.greeting||'').trim();
+  const highlights=((($('fsHl')||{}).value)||(_friendDraft.highlights||[]).join('\n')).split('\n').map(s=>s.trim()).filter(Boolean).slice(0,8);
+  friendShare={published:true,token,greeting,highlights,
     photos:_friendDraft.photos.filter(p=>p.on).map(p=>({path:p.path,cap:p.cap,place:p.place,date:p.date})),
     reflections:_friendDraft.reflections.filter(r=>r.on).map(r=>({text:r.text,date:r.date})),
     publishedAt:new Date().toISOString()};

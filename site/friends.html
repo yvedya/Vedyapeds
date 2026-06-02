@@ -13,8 +13,12 @@
   .eyebrow{text-align:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
   h1{font-family:Georgia,'Times New Roman',serif;font-weight:500;font-size:34px;text-align:center;margin:0 0 6px}
   .date{text-align:center;color:var(--muted);font-size:13px;margin-bottom:30px}
-  .intro{font-family:Georgia,serif;font-size:19px;line-height:1.7;color:#33312e;margin:0 auto 30px;max-width:640px;white-space:pre-wrap}
-  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin:26px 0}
+  .greeting{font-family:Georgia,serif;font-style:italic;font-size:20px;line-height:1.6;color:#33312e;margin:0 auto 22px;max-width:560px;text-align:center}
+  .hl{list-style:none;padding:0;max-width:540px;margin:0 auto 30px}
+  .hl li{font-family:Georgia,serif;font-size:18px;padding:9px 0;border-bottom:1px solid var(--line);color:#33312e}
+  .hl li:last-child{border-bottom:none}
+  .hl li::before{content:'✦';color:var(--accent);margin-right:10px;font-size:13px;vertical-align:1px}
+  .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin:8px 0 26px}
   .shot{position:relative;border-radius:14px;overflow:hidden;background:#eee;aspect-ratio:4/5}
   .shot img{width:100%;height:100%;object-fit:cover;display:block}
   .shot .cap{position:absolute;left:0;right:0;bottom:0;padding:22px 12px 9px;color:#fff;font-size:12.5px;background:linear-gradient(transparent,rgba(0,0,0,.6))}
@@ -40,9 +44,11 @@
   try{const r=await fetch('/.netlify/functions/friends?s='+encodeURIComponent(s));d=await r.json();if(!r.ok||d.error)throw 0;}
   catch(e){fail();return;}
   const when=d.publishedAt?new Date(d.publishedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+  const greeting=d.greeting?`<div class="greeting">${esc(d.greeting)}</div>`:'';
+  const hl=(d.highlights&&d.highlights.length)?'<ul class="hl">'+d.highlights.map(h=>`<li>${esc(h)}</li>`).join('')+'</ul>':'';
   const gallery=(d.photos&&d.photos.length)?'<div class="gallery">'+d.photos.map(p=>`<div class="shot"><img loading="lazy" src="${esc(p.url)}" alt="">${(p.cap||p.place)?`<div class="cap">${esc(p.cap||'')}${p.place?`<span class="pl">📍 ${esc(p.place)}</span>`:''}</div>`:''}</div>`).join('')+'</div>':'';
   const refl=(d.reflections&&d.reflections.length)?'<div class="refl-h">Reflections</div>'+d.reflections.map(r=>`<div class="refl">${esc(r.text)}${r.date?`<span class="rd">${esc(r.date)}</span>`:''}</div>`).join(''):'';
-  app.innerHTML=`<div class="eyebrow">An update</div><h1>What I’ve been up to</h1>${when?`<div class="date">${esc(when)}</div>`:''}<div class="intro">${esc(d.intro||'')}</div>${gallery}${refl}<div class="foot">Shared privately · a quiet little corner of life ♡</div>`;
+  app.innerHTML=`<div class="eyebrow">An update</div><h1>What I’ve been up to</h1>${when?`<div class="date">${esc(when)}</div>`:''}${greeting}${hl}${gallery}${refl}<div class="foot">Shared privately · a quiet little corner of life ♡</div>`;
   document.title='An update · what I’ve been up to';
 })();
 </script>

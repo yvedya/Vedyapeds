@@ -46,7 +46,8 @@ exports.handler = async (event) => {
       if (url) photos.push({ url, cap: p.cap || '', place: p.place || '', date: p.date || '' });
     }
     return json({
-      intro: fs.intro || '',
+      greeting: fs.greeting || fs.intro || '',
+      highlights: Array.isArray(fs.highlights) ? fs.highlights : [],
       publishedAt: fs.publishedAt || null,
       photos,
       reflections: (fs.reflections || []).map(r => ({ text: r.text || '', date: r.date || '' }))
