@@ -1155,6 +1155,61 @@ async function openFeedback(){
   draw();setTimeout(()=>$('fbIn').focus(),30);
 }
 window.__openFeedback=openFeedback;
+// ---- Friend update: AI-written, friend-facing highlights page published to a private link ----
+let friendShare=null,_friendDraft=null;
+async function loadFriendShare(){try{const r=await window.storage.get('repo:friendshare');friendShare=r&&r.value?JSON.parse(r.value):null;}catch(e){friendShare=null;}}
+async function saveFriendShare(){try{await window.storage.set('repo:friendshare',JSON.stringify(friendShare||{}));}catch(e){}}
+function friendLink(){return (friendShare&&friendShare.token)?`${location.origin}/friends.html?s=${friendShare.token}`:'';}
+async function openFriendShare(){await loadFriendShare();_friendDraft=null;drawFriendShare('idle');}
+async function genFriendUpdate(){
+  drawFriendShare('loading');
+  const cut=new Date(Date.now()-45*864e5).toISOString().slice(0,10);
+  let pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length&&(e.when||(e.created||'').slice(0,10))>=cut).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created));
+  if(pm.length<3)pm=entries.filter(e=>e.type==='memories'&&e.imgs&&e.imgs.length).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,8);
+  pm=pm.slice(0,12);
+  const refs=entries.filter(e=>e.type==='reflections'&&(e.text||'').trim()&&(e.when||(e.created||'').slice(0,10))>=cut).sort((a,b)=>(b.when||b.created).localeCompare(a.when||a.created)).slice(0,5);
+  const ctx=pm.map(m=>`- ${m.when||''} ${m.place?('('+m.place+') '):''}${((m.text||'')+'').replace(/\s+/g,' ').slice(0,140)}`).join('\n')+(refs.length?'\n\nReflections:\n'+refs.map(r=>'- '+((r.text||'')+'').replace(/\s+/g,' ').slice(0,140)).join('\n'):'');
+  let intro='';
+  try{intro=await askAnthropic(`Write a warm, upbeat, FIRST-PERSON life update (2 short paragraphs, ~5-7 sentences total) that I'll share with friends, based on these recent highlights. Personal and genuine, like a postcard — flowing prose, no bullet points. Begin with a friendly greeting. Don't invent specifics that aren't here.\n\nHIGHLIGHTS:\n${ctx||'(quiet lately)'}`,500);}catch(e){intro='Hi friends! Here’s a little update on what I’ve been up to lately.';}
+  _friendDraft={intro:intro||'',photos:pm.map(m=>({path:m.imgs[0],cap:((m.text||'')+'').replace(/\s+/g,' ').slice(0,80),place:m.place||'',date:m.when||'',on:true})),reflections:refs.map(r=>({text:((r.text||'')+'').slice(0,300),date:r.when||'',on:true}))};
+  drawFriendShare('edit');
+}
+function drawFriendShare(state){
+  const m=$('modal');
+  const linkRow=(friendShare&&friendShare.published)?`<div style="background:var(--accent-soft);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px;color:var(--ink)">✅ Your page is live:<br><span style="word-break:break-all;font-size:12px">${esc(friendLink())}</span><div style="margin-top:8px;display:flex;gap:8px"><button id="fsCopy" class="add">Copy link</button><button id="fsUnpub" style="border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:7px 12px;cursor:pointer;color:var(--ink)">Unpublish</button></div></div>`:'';
+  let body;
+  if(state==='loading')body='<div class="msub" style="padding:18px 0">✦ Writing your update…</div>';
+  else if(state==='edit'&&_friendDraft){
+    body=`<label class="msub">Your message (edit freely):</label>
+      <textarea id="fsIntro" style="width:100%;box-sizing:border-box;min-height:120px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:6px 0 12px">${esc(_friendDraft.intro)}</textarea>
+      <div class="msub">Photos (tap to include/exclude):</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px">${_friendDraft.photos.map((p,i)=>`<button data-fsp="${i}" style="position:relative;border:none;padding:0;cursor:pointer;border-radius:8px;overflow:hidden;width:74px;height:74px;opacity:${p.on?'1':'.32'}"><img src="${disp(p.path)}" style="width:100%;height:100%;object-fit:cover">${p.on?'<span style="position:absolute;top:3px;right:3px;background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center">✓</span>':''}</button>`).join('')}</div>
+      ${_friendDraft.reflections.length?`<div class="msub">Reflections to include:</div><div style="margin:6px 0 12px">${_friendDraft.reflections.map((r,i)=>`<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;padding:5px 0;cursor:pointer;color:var(--ink)"><input type="checkbox" data-fsr="${i}" ${r.on?'checked':''} style="margin-top:3px"><span>${esc(r.text.slice(0,120))}</span></label>`).join('')}</div>`:''}
+      <button id="fsPublish" class="prim" style="width:100%;padding:11px">${(friendShare&&friendShare.published)?'Update the live page':'Publish & get link'}</button>`;
+  }else{
+    body=`<button id="fsGen" class="prim" style="width:100%;padding:11px;margin:6px 0">✦ ${(friendShare&&friendShare.published)?'Regenerate update':'Generate update from my recent memories'}</button>`;
+  }
+  m.innerHTML=`<h3>📣 Friend update</h3><div class="msub">A warm, AI-written highlights page for friends — recent photos &amp; reflections only. Your tasks, wellness, study, car records and exact GPS are never shared.</div>${linkRow}${body}<div class="mfoot"><button id="fsClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  if($('fsGen'))$('fsGen').onclick=genFriendUpdate;
+  if($('fsCopy'))$('fsCopy').onclick=()=>{try{navigator.clipboard.writeText(friendLink());showToast('Link copied');}catch(e){}};
+  if($('fsUnpub'))$('fsUnpub').onclick=async()=>{if(friendShare){friendShare.published=false;await saveFriendShare();}openFriendShare();};
+  if($('fsIntro'))$('fsIntro').addEventListener('input',e=>{if(_friendDraft)_friendDraft.intro=e.target.value;});
+  m.querySelectorAll('[data-fsp]').forEach(b=>b.onclick=()=>{const p=_friendDraft.photos[+b.dataset.fsp];if(p){p.on=!p.on;drawFriendShare('edit');}});
+  m.querySelectorAll('[data-fsr]').forEach(c=>c.onchange=()=>{const r=_friendDraft.reflections[+c.dataset.fsr];if(r)r.on=c.checked;});
+  if($('fsPublish'))$('fsPublish').onclick=publishFriendUpdate;
+  if($('fsClose'))$('fsClose').onclick=()=>$('overlay').classList.remove('open');
+}
+async function publishFriendUpdate(){
+  if(!_friendDraft)return;
+  const token=(friendShare&&friendShare.token)||(uid()+uid()+uid());
+  friendShare={published:true,token,intro:_friendDraft.intro,
+    photos:_friendDraft.photos.filter(p=>p.on).map(p=>({path:p.path,cap:p.cap,place:p.place,date:p.date})),
+    reflections:_friendDraft.reflections.filter(r=>r.on).map(r=>({text:r.text,date:r.date})),
+    publishedAt:new Date().toISOString()};
+  await saveFriendShare();_friendDraft=null;drawFriendShare('idle');showToast('Published — link ready to share');
+}
+window.__openFriendShare=openFriendShare;
 // ---- Task brain-dump: free text -> AI sorts into clean tasks (area, tags, recurrence) ----
 async function sortTasks(text){
   const areaList=areas.map(a=>`"${a.id}" (${a.name})`).join(', ');
