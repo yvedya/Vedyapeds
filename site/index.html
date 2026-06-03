@@ -1281,8 +1281,21 @@ function openTaskDump(){
     const o=$('tdOut');o.innerHTML='<span style="color:var(--muted)">Sorting…</span>';
     try{parsed=await sortTasks(text);}catch(e){o.innerHTML='<span style="color:#c0392b">Could not sort — check your connection and try again.</span>';return;}
     if(!parsed.length){o.innerHTML='<div class="msub">No tasks found in that.</div>';return;}
-    o.innerHTML=`<div style="max-height:36vh;overflow:auto">${parsed.map((p,i)=>{const a=areaById(p.area)||areas[0];return `<label style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 2px;cursor:pointer"><input type="checkbox" data-tdi="${i}" checked style="margin-top:3px;flex:none"><span style="flex:1;font-size:13px;color:var(--ink)">${esc(p.text||'')}<div style="font-size:11px;color:var(--muted);margin-top:2px"><span style="color:${a.color}">${esc(a.name)}</span>${(p.tags||[]).map(t=>' #'+esc(t)).join('')}${p.priority?` · ⚑ ${esc(p.priority)}`:''}${p.every?` · 🔁 every ${+p.every}d`:''}</div></span></label>`;}).join('')}</div>
+    const ss="border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 7px;font-size:12px;color:var(--ink);font-family:var(--sans)";
+    o.innerHTML=`<div class="msub" style="margin-bottom:6px">Edit anything before adding — uncheck to skip.</div><div style="max-height:42vh;overflow:auto">${parsed.map((p,i)=>`<div style="border-bottom:1px solid var(--line);padding:9px 2px">
+        <div style="display:flex;gap:8px;align-items:center"><input type="checkbox" data-tdi="${i}" checked style="flex:none"><input data-tdtext="${i}" value="${esc(p.text||'')}" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:7px;padding:6px 9px;font-size:13.5px;color:var(--ink);font-family:var(--sans)"></div>
+        <div style="display:flex;gap:6px;align-items:center;margin:6px 0 0 26px;flex-wrap:wrap">
+          <select data-tdarea="${i}" style="${ss}">${areas.map(a=>`<option value="${a.id}" ${p.area===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select>
+          <select data-tdprio="${i}" style="${ss}">${[['','priority —'],['high','⚑ High'],['med','⚑ Med'],['low','⚑ Low']].map(([v,l])=>`<option value="${v}" ${(p.priority||'')===v?'selected':''}>${l}</option>`).join('')}</select>
+          <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px">🔁<input type="checkbox" data-tdrep="${i}" ${p.every?'checked':''}><input type="number" data-tdevery="${i}" value="${p.every||7}" min="1" style="width:40px;${ss}">d</label>
+          ${(p.tags||[]).length?`<span style="font-size:11px;color:var(--muted)">${(p.tags||[]).map(t=>'#'+esc(t)).join(' ')}</span>`:''}
+        </div></div>`).join('')}</div>
       <button id="tdAdd" class="prim" style="width:100%;padding:10px;margin-top:10px">Add selected tasks</button>`;
+    o.querySelectorAll('[data-tdtext]').forEach(inp=>inp.oninput=()=>{parsed[+inp.dataset.tdtext].text=inp.value;});
+    o.querySelectorAll('[data-tdarea]').forEach(s=>s.onchange=()=>{parsed[+s.dataset.tdarea].area=s.value;});
+    o.querySelectorAll('[data-tdprio]').forEach(s=>s.onchange=()=>{parsed[+s.dataset.tdprio].priority=s.value;});
+    o.querySelectorAll('[data-tdrep]').forEach(c=>c.onchange=()=>{const i=+c.dataset.tdrep,n=o.querySelector('[data-tdevery="'+i+'"]');parsed[i].every=c.checked?Math.max(1,parseInt(n&&n.value,10)||7):0;});
+    o.querySelectorAll('[data-tdevery]').forEach(n=>n.oninput=()=>{const i=+n.dataset.tdevery,c=o.querySelector('[data-tdrep="'+i+'"]');if(c&&c.checked)parsed[i].every=Math.max(1,parseInt(n.value,10)||7);});
     $('tdAdd').onclick=async()=>{
       const picks=[...o.querySelectorAll('[data-tdi]')].filter(c=>c.checked).map(c=>parsed[+c.dataset.tdi]).filter(Boolean);
       if(!picks.length)return;
