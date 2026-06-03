@@ -150,6 +150,24 @@
   .log-know{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px;font-size:14px;color:var(--ink);cursor:pointer}
   .log-know b{font-weight:600}
   .log-know:hover{border-color:var(--faint)}
+  /* tasks view: filters, buckets, focus, steps */
+  .tfilters{display:flex;gap:7px;margin:0 0 14px;flex-wrap:wrap}
+  .tfchip{border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:999px;padding:5px 13px;font-size:12.5px;cursor:pointer;font-family:var(--sans)}
+  .tfchip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .tbucket{margin-bottom:16px}
+  .tbucket-h{display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:none;border:none;cursor:pointer;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-family:var(--sans);font-weight:600;padding:4px 2px;margin-bottom:6px}
+  .tbucket-h .tbn{color:var(--faint);font-weight:500}
+  .tbucket-h .chev{font-size:10px}
+  .tbucket-h.focus-h{color:var(--accent)}
+  .tbucket-h.over-h{color:#c0392b}
+  .focuspin{background:none;border:none;cursor:pointer;color:var(--faint);font-size:16px;padding:0 2px;line-height:1}
+  .focuspin.on{color:#d9a400}
+  .entry.is-focus{box-shadow:inset 3px 0 0 #d9a400}
+  .steps{margin-top:10px;padding-top:8px;border-top:1px dashed var(--line)}
+  .step{display:flex;align-items:flex-start;gap:8px;font-size:13.5px;color:var(--ink);padding:3px 0;cursor:pointer}
+  .step.done span{color:var(--done);text-decoration:line-through;text-decoration-color:var(--faint)}
+  .step input{margin-top:3px;flex:none}
+  .step-add{background:none;border:none;color:var(--accent);font-size:12.5px;cursor:pointer;padding:5px 0 0;font-family:var(--sans)}
   .entry .check:hover{border-color:var(--accent)}
   .entry.done .check{background:var(--accent);border-color:var(--accent)}
   .entry .check svg{opacity:0;transition:.15s;width:11px;height:11px}
@@ -839,6 +857,7 @@ let studySources=[], studyProposed=null;
 let wellnessLog={}; // { 'YYYY-MM-DD': { fitness:true, diet:true, sleep:7.5, mood:'good' } }
 let entries=[], areas=[], ready=false, carRecords=[], learnList=[], notePalette='terracotta';
 let homeBgOverride=null, _carIdx=0; // session-only manual backdrop pick (e.g. show a car)
+let taskFilter='all', taskBucketCollapsed={done:true}; // Tasks view: quick filter + which buckets are collapsed
 // custom car icon — stylized tanzanite-blue sport sedan (BMW G80 M3), used for car button/records
 const CAR_ICON=`<svg class="caricon" viewBox="0 0 96 84" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M34 12 Q38 9 48 9 Q58 9 62 12 L70 31 L26 31 Z" fill="#1b2640"/><path d="M14 70 Q8 36 26 30 L70 30 Q88 36 82 70 Q82 74 76 74 L20 74 Q14 74 14 70 Z" fill="#2b3c61"/><path d="M30 31 Q30 44 26 56" stroke="#3a4e78" stroke-width="1.1" fill="none"/><path d="M66 31 Q66 44 70 56" stroke="#3a4e78" stroke-width="1.1" fill="none"/><path d="M20 39 L37 41 L35 46 L20 45 Z" fill="#c2d6ef"/><path d="M76 39 L59 41 L61 46 L76 45 Z" fill="#c2d6ef"/><rect x="40" y="36" width="7.4" height="30" rx="3" fill="#10151f"/><rect x="48.6" y="36" width="7.4" height="30" rx="3" fill="#10151f"/><circle cx="48" cy="33" r="5" fill="#0c1422" stroke="#dfe7f2" stroke-width="1"/><path d="M48 28 A5 5 0 0 1 53 33 L48 33 Z" fill="#4a82c4"/><path d="M48 38 A5 5 0 0 1 43 33 L48 33 Z" fill="#4a82c4"/><path d="M18 66 L32 66 L30 71 L19 71 Z" fill="#10151f"/><path d="M78 66 L64 66 L66 71 L77 71 Z" fill="#10151f"/></svg>`;
 
@@ -2214,10 +2233,14 @@ function entryHTML(e,ro){
   if(e.type==='tasks'&&e.priority){const PM={high:['High','#c0392b'],med:['Med','#c47f17'],low:['Low','#3a7ca5']}[e.priority];if(PM)prioEl=`<span class="when" title="${PM[0]} priority" style="color:${PM[1]};font-weight:600">⚑ ${PM[0]}</span>`;}
   let dueEl='';
   if(e.type==='tasks'&&!e.every&&e.when){const od=!e.done&&e.when<todayISO();dueEl=`<span class="when ${isFuture(e.when)?'future':''}" style="${od?'color:#c0392b;font-weight:600':''}">${od?'overdue · ':'due '}${relTime(e.when)}</span>`;}
-  return `<div class="entry ${cls} ${e.featured?'is-featured':''}">${check}${aline}
+  const focusBtn=(e.type==='tasks'&&!ro)?`<button class="focuspin ${e.focus?'on':''}" data-focus="${e.id}" title="${e.focus?'in Focus today — tap to remove':'add to Focus today (max 3)'}">★</button>`:'';
+  let stepsEl='';
+  if(e.type==='tasks'&&!ro){const steps=e.steps||[];const dn=steps.filter(s=>s.done).length;
+    stepsEl=`<div class="steps">${steps.map((s,i)=>`<label class="step ${s.done?'done':''}"><input type="checkbox" data-step="${e.id}" data-si="${i}" ${s.done?'checked':''}><span>${esc(s.text)}</span></label>`).join('')}<button class="step-add" data-stepadd="${e.id}">+ step${steps.length?` · ${dn}/${steps.length} done`:''}</button></div>`;}
+  return `<div class="entry ${cls} ${e.featured?'is-featured':''} ${e.focus&&!e.done?'is-focus':''}">${check}${aline}
     <div class="body">${titleEl}${srcEl}${textEl}${imgs}${linksEl}
-    <div class="foot">${featBadge}${prioEl}${apill}${tags}${recurEl}${e.type==='tasks'?dueEl:when}</div></div>
-    <div class="acts">${featBtn}<button class="edit" data-edit="${e.id}" title="edit">✎</button><button class="mv" data-mv="${e.id}" title="move / reassign">⇄</button><button class="del" data-del="${e.id}" title="delete">✕</button></div>
+    <div class="foot">${featBadge}${prioEl}${apill}${tags}${recurEl}${e.type==='tasks'?dueEl:when}</div>${stepsEl}</div>
+    <div class="acts">${focusBtn}${featBtn}<button class="edit" data-edit="${e.id}" title="edit">✎</button><button class="mv" data-mv="${e.id}" title="move / reassign">⇄</button><button class="del" data-del="${e.id}" title="delete">✕</button></div>
     <div class="menu ${menuOpen===e.id?'open':''}" id="mm-${e.id}">
       <div class="mhead">Change type</div>${moveTypes}
       <div class="mhead">Change area</div>${moveAreas}</div></div>`;
@@ -2231,6 +2254,9 @@ function renderHome(){
   const ahead=entries.filter(e=>!e.done&&isFuture(e.when)).length;
   const sub=`${openT?`${openT} open task${openT>1?'s':''}`:'No open tasks'}${ahead?`, and ${ahead} thing${ahead>1?'s':''} ahead`:''}.`;
 
+  // ★ Focus today — the (max 3) tasks she's pinned to focus on
+  const focusT=entries.filter(e=>e.type==='tasks'&&e.focus&&!e.done);
+  const focusEl=focusT.length?`<div class="home-sec"><div class="sh">★ Focus today</div>${focusT.map(e=>{const a=areaById(e.area);return `<div class="home-row"><button data-rdue="${e.id}" title="mark done" style="border:1px solid var(--line);background:var(--bg);color:var(--accent);border-radius:6px;width:22px;height:22px;cursor:pointer;flex:none;margin-right:4px">✓</button><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span></div>`;}).join('')}</div>`:'';
   // recurring chores that are due / overdue
   const due=dueRecurring();
   const dueEl=due.length?`<div class="home-sec"><div class="sh">Due now${due.length>1?` · ${due.length}`:''}</div>${due.map(e=>{const a=areaById(e.area);const d=recurDueDays(e);const lab=d<0?`${-d}d overdue`:'today';return `<div class="home-row"><button data-rdue="${e.id}" title="mark done" style="border:1px solid var(--line);background:var(--bg);color:var(--accent);border-radius:6px;width:22px;height:22px;cursor:pointer;flex:none;margin-right:4px">✓</button><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span><span class="rwhen future">${lab}</span></div>`;}).join('')}</div>`:'';
@@ -2287,6 +2313,7 @@ function renderHome(){
       ${topRight}
       ${jfeat}
       <div class="home-status">${sub}</div>
+      ${focusEl}
       ${dueEl}
       ${strip}
       ${otd?`<div class="onthisday"><div class="od">On this day · ${otd.when.slice(0,4)}</div><div class="oq">"${esc(otd.text.slice(0,260))}${otd.text.length>260?'…':''}"</div></div>`:''}
@@ -2311,6 +2338,7 @@ function renderHome(){
     ${topRight}
     ${jfeat}
     <div class="home-status">${sub}</div>
+    ${focusEl}
     ${dueEl}
     <div class="home-areas">${acards}</div>
     ${otd?`<div class="onthisday"><div class="od">On this day · ${otd.when.slice(0,4)}</div><div class="oq">"${esc(otd.text.slice(0,220))}${otd.text.length>220?'…':''}"</div></div>`:''}
@@ -2948,6 +2976,8 @@ function renderSection(){
   let listHTML;
   if(current==='goals' && !search && !activeTag){
     listHTML=goalsListHTML(items);
+  } else if(current==='tasks' && !search && !activeTag){
+    listHTML=tasksListHTML(items);
   } else if(isK && window._ksrc==='textbook' && items.length){
     const groups={};
     items.forEach(e=>{const book=(e.meta&&e.meta.book)||'Unfiled';const ch=(e.meta&&e.meta.chapter)||'—';const key=book+' ▸ '+ch;(groups[key]=groups[key]||[]).push(e);});
@@ -2972,7 +3002,31 @@ function renderSection(){
     $('view').querySelectorAll('[data-psub]').forEach(b=>b.onclick=()=>{pursuitsSub=b.dataset.psub;current=pursuitsSub;renderSection();});
   }
 }
-// ----- goal hierarchy + habit streaks -----
+// ----- Tasks view: Focus 3 + quick filters + Today/This week/Later buckets -----
+async function toggleFocus(id){const e=entries.find(x=>x.id===id);if(!e)return;
+  if(!e.focus){const n=entries.filter(x=>x.type==='tasks'&&x.focus&&!x.done).length;if(n>=3){showToast('Focus is full (3) — unstar one first.','',null);return;}}
+  e.focus=!e.focus;e._mod=Date.now();render();await saveEntries();}
+function taskDueDays(e){if(e.type!=='tasks')return null;if(e.every)return recurDueDays(e);if(!e.when)return null;return Math.round((new Date(e.when+'T00:00:00')-new Date(todayISO()+'T00:00:00'))/864e5);}
+function tasksListHTML(items){
+  const open=items.filter(e=>!e.done),done=items.filter(e=>e.done);
+  const tf=taskFilter;
+  const passFilter=e=>{if(tf==='high')return e.priority==='high';if(tf==='soon'){const d=taskDueDays(e);return d!=null&&d<=7;}return true;};
+  const chips=`<div class="tfilters">${[['all','All'],['high','⚑ High'],['soon','📅 Due soon']].map(([v,l])=>`<button class="tfchip ${tf===v?'on':''}" data-tf="${v}">${l}</button>`).join('')}</div>`;
+  const focus=open.filter(e=>e.focus);
+  const rest=open.filter(e=>!e.focus&&passFilter(e));
+  const buckets={overdue:[],today:[],week:[],later:[],someday:[]};
+  rest.forEach(e=>{const d=taskDueDays(e);if(d==null)buckets.someday.push(e);else if(d<0)buckets.overdue.push(e);else if(d===0)buckets.today.push(e);else if(d<=7)buckets.week.push(e);else buckets.later.push(e);});
+  const sec=(title,arr,key,cls)=>{if(!arr.length)return'';const col=key&&!!taskBucketCollapsed[key];const head=key?`<button class="tbucket-h ${cls||''}" data-bucket="${key}"><span class="chev">${col?'▸':'▾'}</span>${title} <span class="tbn">${arr.length}</span></button>`:`<div class="tbucket-h ${cls||''}">${title} <span class="tbn">${arr.length}</span></div>`;return `<div class="tbucket">${head}${col?'':`<div class="list">${arr.map(entryHTML).join('')}</div>`}</div>`;};
+  let body=focus.length?sec('★ Focus today',focus,null,'focus-h').replace('<span class="tbn">'+focus.length+'</span>','<span class="tbn">'+focus.length+'/3</span>'):'';
+  body+=sec('Overdue',buckets.overdue,'overdue','over-h');
+  body+=sec('Today',buckets.today,'today');
+  body+=sec('This week',buckets.week,'week');
+  body+=sec('Later',buckets.later,'later');
+  body+=sec('No date / someday',buckets.someday,'someday');
+  if(!focus.length&&!Object.values(buckets).some(a=>a.length))body+=`<div class="empty"><div class="mark">✓</div><p>${tf!=='all'?'Nothing matches this filter.':'No open tasks — nice.'}</p></div>`;
+  body+=sec('Done',done,'done');
+  return chips+body;
+}
 function todayISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function streakOf(e){
   const log=e.habitLog||[];if(!log.length)return 0;
@@ -3039,6 +3093,12 @@ function startSubGoal(parentId){
 }
 function wireSection(){
   wireAreaStrip();
+  // Tasks view: filters, bucket collapse, focus pin, steps
+  $('view').querySelectorAll('[data-tf]').forEach(b=>b.onclick=()=>{taskFilter=b.dataset.tf;renderSection();});
+  $('view').querySelectorAll('[data-bucket]').forEach(b=>b.onclick=()=>{const k=b.dataset.bucket;taskBucketCollapsed[k]=!taskBucketCollapsed[k];renderSection();});
+  $('view').querySelectorAll('[data-focus]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();toggleFocus(b.dataset.focus);});
+  $('view').querySelectorAll('[data-step]').forEach(c=>c.onchange=async()=>{const e=entries.find(x=>x.id===c.dataset.step);if(!e||!e.steps)return;const s=e.steps[+c.dataset.si];if(s){s.done=c.checked;e._mod=Date.now();await saveEntries();renderSection();}});
+  $('view').querySelectorAll('[data-stepadd]').forEach(b=>b.onclick=async()=>{const e=entries.find(x=>x.id===b.dataset.stepadd);if(!e)return;const t=prompt('Next step for "'+((e.text||'').slice(0,40))+'":');if(t&&t.trim()){e.steps=e.steps||[];e.steps.push({text:t.trim(),done:false});e._mod=Date.now();await saveEntries();renderSection();}});
   // collapsed composer
   if($('openComposer')){$('openComposer').onclick=()=>{startNew();};}
   if($('openBrainDump'))$('openBrainDump').onclick=()=>openTaskDump();
