@@ -168,6 +168,22 @@
   .step.done span{color:var(--done);text-decoration:line-through;text-decoration-color:var(--faint)}
   .step input{margin-top:3px;flex:none}
   .step-add{background:none;border:none;color:var(--accent);font-size:12.5px;cursor:pointer;padding:5px 0 0;font-family:var(--sans)}
+  /* session plan */
+  .ss-start-btn{width:100%;border:1px dashed var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;font-family:var(--sans)}
+  .ss-open{border:1px solid var(--line);background:var(--bg);color:var(--muted);border-radius:7px;padding:3px 10px;font-size:11.5px;cursor:pointer;font-family:var(--sans);text-transform:none;letter-spacing:0}
+  .ss-open:hover{color:var(--accent);border-color:var(--accent)}
+  .ss-hcheck{flex:none;width:22px;height:22px;border:1.5px solid var(--faint);border-radius:6px;background:none;color:var(--accent);cursor:pointer;font-size:13px;margin-right:6px}
+  .ss-hcheck.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .ss-prog{font-size:13px;color:var(--muted);margin:8px 0 10px;text-align:center}
+  .ss-list{max-height:44vh;overflow:auto}
+  .ss-item{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .ss-item input[type=checkbox]{flex:none}
+  .ss-item.done .ss-text{color:var(--done);text-decoration:line-through;text-decoration-color:var(--faint)}
+  .ss-text{flex:1;border:none;background:none;font-size:14px;color:var(--ink);font-family:var(--sans);outline:none;padding:4px 2px}
+  .ss-ord{display:flex;gap:2px;flex:none}
+  .ss-ord button{border:none;background:none;color:var(--faint);cursor:pointer;font-size:14px;padding:2px 5px;border-radius:5px}
+  .ss-ord button:hover:not(:disabled){color:var(--ink);background:var(--bg)}
+  .ss-ord button:disabled{opacity:.3;cursor:default}
   .entry .check:hover{border-color:var(--accent)}
   .entry.done .check{background:var(--accent);border-color:var(--accent)}
   .entry .check svg{opacity:0;transition:.15s;width:11px;height:11px}
@@ -886,6 +902,7 @@ async function load(){
   try{const tr=await window.storage.get('repo:trash');trash=tr&&tr.value?JSON.parse(tr.value):[];}catch(e){trash=[];}
   try{const c=await window.storage.get('repo:car');carRecords=c&&c.value?JSON.parse(c.value):[];}catch(e){carRecords=[];}
   try{const ll=await window.storage.get('repo:tolearn');learnList=ll&&ll.value?JSON.parse(ll.value):[];}catch(e){learnList=[];}
+  try{const sp=await window.storage.get('repo:session');sessionPlan=sp&&sp.value?JSON.parse(sp.value):null;}catch(e){sessionPlan=null;}
   try{await refreshImageUrls();}catch(e){}
   ready=true;
 }
@@ -1097,6 +1114,7 @@ function openMenu(){
   const m=$('modal');
   const groups=[
     {h:'Tools',items:[
+      {label:'▶  Session plan', fn:'__openSession'},
       {label:'✦  Ask / review my week', fn:'__openAI'},
       {label:'🧹  Brain-dump tasks', fn:'__openTaskDump'},
       {label:'🔍  Search everything', fn:'__openSearch'},
@@ -1268,6 +1286,46 @@ async function publishFriendUpdate(){
   await saveFriendShare();_friendDraft=null;drawFriendShare('idle');showToast('Published — link ready to share');
 }
 window.__openFriendShare=openFriendShare;
+// ---- Session plan: a quick, ordered "what I'm attacking this session" checklist (like a scratch doc) ----
+let sessionPlan=null;
+async function loadSession(){try{const r=await window.storage.get('repo:session');sessionPlan=(r&&r.value)?JSON.parse(r.value):null;}catch(e){sessionPlan=null;}}
+async function saveSession(){try{await window.storage.set('repo:session',JSON.stringify(sessionPlan||null));}catch(e){}}
+function ssItems(){return (sessionPlan&&Array.isArray(sessionPlan.items))?sessionPlan.items:[];}
+function openSession(){
+  const m=$('modal');const items=ssItems();const done=items.filter(i=>i.done).length;
+  let body;
+  if(!items.length){
+    body=`<div class="msub">Type your to-dos for this session — one per line, in the order you'll attack them.</div>
+      <textarea id="ssBulk" placeholder="Review overnight labs\nCall pharmacy re: order\nFinish DKA note\nEmail attending\nPrep for rounds" style="width:100%;box-sizing:border-box;min-height:150px;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:10px 12px;font-size:14px;font-family:var(--sans);color:var(--ink);margin:10px 0;line-height:1.6"></textarea>
+      <button id="ssStart" class="prim" style="width:100%;padding:11px">▶ Start session</button>`;
+  }else{
+    body=`<div class="ss-prog">${done} of ${items.length} done${(done===items.length)?' 🎉':''}</div>
+      <div class="ss-list">${items.map((it,i)=>`<div class="ss-item ${it.done?'done':''}">
+        <input type="checkbox" data-ssdone="${i}" ${it.done?'checked':''}>
+        <input class="ss-text" data-sstext="${i}" value="${esc(it.text)}">
+        <span class="ss-ord"><button data-ssup="${i}" ${i===0?'disabled':''} title="move up">↑</button><button data-ssdn="${i}" ${i===items.length-1?'disabled':''} title="move down">↓</button><button data-ssrm="${i}" title="remove">✕</button></span>
+      </div>`).join('')}</div>
+      <div style="display:flex;gap:8px;margin:12px 0"><input id="ssAdd" placeholder="Add another to-do…" style="flex:1;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:9px 12px;font-size:14px;font-family:var(--sans);color:var(--ink)"><button id="ssAddBtn" class="add">Add</button></div>`;
+  }
+  m.innerHTML=`<h3>This session</h3>${body}<div class="mfoot">${items.length?`<button id="ssFinish" style="margin-right:auto;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--ink)">Finish &amp; log</button>`:''}<button id="ssClose" class="prim">Done</button></div>`;
+  $('overlay').classList.add('open');
+  const refreshHome=()=>{if(current==='home')renderHome();};
+  if($('ssStart'))$('ssStart').onclick=async()=>{const lines=(($('ssBulk')||{}).value||'').split('\n').map(s=>s.trim()).filter(Boolean);if(!lines.length)return;sessionPlan={items:lines.map(t=>({id:uid(),text:t,done:false})),startedAt:new Date().toISOString()};await saveSession();openSession();refreshHome();};
+  m.querySelectorAll('[data-ssdone]').forEach(c=>c.onchange=async()=>{const it=ssItems()[+c.dataset.ssdone];if(it){it.done=c.checked;await saveSession();openSession();refreshHome();}});
+  m.querySelectorAll('[data-sstext]').forEach(inp=>inp.onchange=async()=>{const it=ssItems()[+inp.dataset.sstext];if(it){it.text=inp.value;await saveSession();}});
+  m.querySelectorAll('[data-ssup]').forEach(b=>b.onclick=async()=>{const i=+b.dataset.ssup,a=ssItems();if(i>0){const t=a[i-1];a[i-1]=a[i];a[i]=t;await saveSession();openSession();}});
+  m.querySelectorAll('[data-ssdn]').forEach(b=>b.onclick=async()=>{const i=+b.dataset.ssdn,a=ssItems();if(i<a.length-1){const t=a[i+1];a[i+1]=a[i];a[i]=t;await saveSession();openSession();}});
+  m.querySelectorAll('[data-ssrm]').forEach(b=>b.onclick=async()=>{ssItems().splice(+b.dataset.ssrm,1);await saveSession();openSession();refreshHome();});
+  const add=async()=>{const v=(($('ssAdd')||{}).value||'').trim();if(!v)return;ssItems().push({id:uid(),text:v,done:false});await saveSession();openSession();setTimeout(()=>{const n=$('ssAdd');if(n)n.focus();},20);refreshHome();};
+  if($('ssAddBtn'))$('ssAddBtn').onclick=add;
+  if($('ssAdd'))$('ssAdd').addEventListener('keydown',e=>{if(e.key==='Enter')add();});
+  if($('ssFinish'))$('ssFinish').onclick=async()=>{const di=ssItems().filter(i=>i.done);
+    if(di.length){entries.push({id:uid(),type:'logs',area:(areas[0]||{}).id,title:null,text:'✅ Session: '+di.map(i=>i.text).join(', '),source:null,meta:null,tags:['session'],when:todayISO(),imgs:[],links:[],done:false,created:new Date().toISOString(),_mod:Date.now()});await saveEntries();}
+    sessionPlan=null;await saveSession();$('overlay').classList.remove('open');refreshHome();showToast(di.length?`Logged ${di.length} done — nice session`:'Session cleared','',null);};
+  $('ssClose').onclick=()=>{$('overlay').classList.remove('open');refreshHome();};
+  setTimeout(()=>{const b=$('ssBulk')||$('ssAdd');if(b)b.focus();},30);
+}
+window.__openSession=openSession;
 // ---- Task brain-dump: free text -> AI sorts into clean tasks (area, tags, recurrence) ----
 async function sortTasks(text){
   const areaList=areas.map(a=>`"${a.id}" (${a.name})`).join(', ');
@@ -2254,6 +2312,12 @@ function renderHome(){
   const ahead=entries.filter(e=>!e.done&&isFuture(e.when)).length;
   const sub=`${openT?`${openT} open task${openT>1?'s':''}`:'No open tasks'}${ahead?`, and ${ahead} thing${ahead>1?'s':''} ahead`:''}.`;
 
+  // ▶ Session plan — the quick ordered "what I'm attacking now" checklist
+  const ssIt=(sessionPlan&&Array.isArray(sessionPlan.items))?sessionPlan.items:[];
+  const ssDone=ssIt.filter(i=>i.done).length;
+  const sessionEl=ssIt.length
+    ? `<div class="home-sec"><div class="sh" style="display:flex;align-items:center;justify-content:space-between"><span>▶ This session · ${ssDone}/${ssIt.length}</span><button id="ssOpen" class="ss-open">open ↗</button></div>${ssIt.slice(0,7).map((it,i)=>`<div class="home-row"><button data-sschk="${i}" class="ss-hcheck ${it.done?'on':''}" title="${it.done?'done':'mark done'}">${it.done?'✓':''}</button><span class="rtext" style="${it.done?'text-decoration:line-through;color:var(--faint)':''}">${esc(it.text)}</span></div>`).join('')}${ssIt.length>7?`<div class="none">+${ssIt.length-7} more…</div>`:''}</div>`
+    : `<div class="home-sec"><button id="ssOpen" class="ss-start-btn">▶ Plan this session</button></div>`;
   // ★ Focus today — the (max 3) tasks she's pinned to focus on
   const focusT=entries.filter(e=>e.type==='tasks'&&e.focus&&!e.done);
   const focusEl=focusT.length?`<div class="home-sec"><div class="sh">★ Focus today</div>${focusT.map(e=>{const a=areaById(e.area);return `<div class="home-row"><button data-rdue="${e.id}" title="mark done" style="border:1px solid var(--line);background:var(--bg);color:var(--accent);border-radius:6px;width:22px;height:22px;cursor:pointer;flex:none;margin-right:4px">✓</button><span class="rdot" style="background:${a?a.color:'var(--faint)'}"></span><span class="rtext">${esc(e.text)}</span></div>`;}).join('')}</div>`:'';
@@ -2313,6 +2377,7 @@ function renderHome(){
       ${topRight}
       ${jfeat}
       <div class="home-status">${sub}</div>
+      ${sessionEl}
       ${focusEl}
       ${dueEl}
       ${strip}
@@ -2331,6 +2396,8 @@ function renderHome(){
     $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
     if($('carBtn'))$('carBtn').onclick=cycleCarBg;
     if($('dailyBtn'))$('dailyBtn').onclick=clearHomeBg;
+  if($('ssOpen'))$('ssOpen').onclick=openSession;
+  $('view').querySelectorAll('[data-sschk]').forEach(b=>b.onclick=async()=>{const it=(sessionPlan&&sessionPlan.items)?sessionPlan.items[+b.dataset.sschk]:null;if(it){it.done=!it.done;await saveSession();renderHome();}});
     return;
   }
 
@@ -2338,6 +2405,7 @@ function renderHome(){
     ${topRight}
     ${jfeat}
     <div class="home-status">${sub}</div>
+    ${sessionEl}
     ${focusEl}
     ${dueEl}
     <div class="home-areas">${acards}</div>
@@ -2350,6 +2418,8 @@ function renderHome(){
   $('view').querySelectorAll('[data-rdue]').forEach(b=>b.onclick=async(ev)=>{ev.stopPropagation();await toggle(b.dataset.rdue);});
   if($('carBtn'))$('carBtn').onclick=cycleCarBg;
   if($('dailyBtn'))$('dailyBtn').onclick=clearHomeBg;
+  if($('ssOpen'))$('ssOpen').onclick=openSession;
+  $('view').querySelectorAll('[data-sschk]').forEach(b=>b.onclick=async()=>{const it=(sessionPlan&&sessionPlan.items)?sessionPlan.items[+b.dataset.sschk]:null;if(it){it.done=!it.done;await saveSession();renderHome();}});
 }
 
 // ---------- TIMELINE ----------
